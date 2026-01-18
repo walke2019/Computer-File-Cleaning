@@ -1,4 +1,5 @@
 .kiro
 .vscode
+.gemini
 node_modules
 dist

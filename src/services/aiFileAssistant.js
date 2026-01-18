@@ -39,21 +39,50 @@ class AIFileAssistantService {
                 modified: stats.mtime,
                 type: this.getFileType(ext),
                 content: null,
-                summary: null,
-                suggestedCategory: null,
-                suggestedName: null,
+                analysis: null, // AI 分析结果
                 importance: 0
             };
 
             // 提取内容（仅文本文件）
+            let contentPreview = '';
             if (this.supportedTypes.text.includes(ext) && stats.size < 1024 * 1024) {
-                analysis.content = fs.readFileSync(filePath, 'utf-8').substring(0, 5000);
+                try {
+                    const content = fs.readFileSync(filePath, 'utf-8');
+                    analysis.content = content.substring(0, 5000);
+                    contentPreview = '\n\n文件内容预览:\n' + content.substring(0, 1000) + (content.length > 1000 ? '...' : '');
+                } catch (e) {
+                    console.warn('读取文件内容失败:', e);
+                }
+            }
+
+            // AI 分析
+            if (this.aiChat) {
+                try {
+                    const prompt = `请分析以下文件:
+文件名: ${fileName}
+大小: ${this.platform ? this.platform.formatSize(stats.size) : stats.size + ' bytes'}
+修改时间: ${stats.mtime.toLocaleString()}
+类型: ${analysis.type}${contentPreview}
+
+请详细说明:
+1. 这可能是什么文件？用途是什么？
+2. 文件的重要性如何？
+3. 是否建议保留或删除？/n请用简洁的语言回答。`;
+
+                    const response = await this.aiChat.sendMessage(prompt, []);
+                    if (response && response.content) {
+                        analysis.analysis = response.content;
+                    }
+                } catch (e) {
+                    console.error('AI 分析请求失败:', e);
+                    analysis.analysis = 'AI 分析暂时不可用，请检查网络连接或 API 配置。';
+                }
             }
 
             return analysis;
         } catch (error) {
             console.error('文件分析失败:', error);
-            return null;
+            return { error: error.message };
         }
     }
 
@@ -87,40 +116,56 @@ class AIFileAssistantService {
     /**
      * AI 智能分类文件
      */
-    async categorizeFiles(files) {
+    async categorizeFiles(files, directoryPath = '') {
         if (!this.aiChat || !files || files.length === 0) {
             return this.basicCategorize(files);
         }
 
         try {
-            // 准备文件信息
-            const fileInfos = files.slice(0, 50).map(f => ({
+            // 准备文件信息（限制数量以避免 token 过多）
+            const fileInfos = files.slice(0, 100).map(f => ({
                 name: f.name || path.basename(f.path),
                 extension: f.extension || path.extname(f.path),
                 size: f.size,
                 type: f.type || this.getFileType(path.extname(f.path))
             }));
 
+            // 从目录路径推断用途
+            const folderName = directoryPath ? path.basename(directoryPath) : '';
+            const contextHint = this.inferDirectoryPurpose(folderName);
+
             const prompt = `请分析以下文件列表，为每个文件建议合适的分类目录。
 
-文件列表：
+**目录上下文：**
+- 当前目录：${directoryPath || '未知'}
+- 目录名称：${folderName || '未知'}
+- 推断用途：${contextHint}
+
+**文件列表（共 ${files.length} 个文件，显示前 ${fileInfos.length} 个）：**
 ${JSON.stringify(fileInfos, null, 2)}
 
 请返回 JSON 格式的分类建议，格式如下：
 {
   "categories": {
-    "工作文档": ["文件1", "文件2"],
-    "个人照片": ["文件3"],
-    "项目代码": ["文件4", "文件5"]
+    "分类名1": ["文件1", "文件2"],
+    "分类名2": ["文件3"],
+    "分类名3": ["文件4", "文件5"]
   },
   "reasoning": "分类理由说明"
 }
 
-要求：
-1. 分类名称要有意义且简洁
-2. 考虑文件类型、名称特征
-3. 最多创建 10 个分类
-4. 每个文件只能属于一个分类`;
+**分类要求：**
+1. **根据目录用途分类**：如果目录名是"小说"，则按小说类型分类（玄幻、科幻、武侠等），而不是按文件格式
+2. **分类名称有意义**：使用用户能理解的分类名，如"玄幻小说"而不是"TXT文件"
+3. **考虑文件特征**：结合文件名、扩展名、大小等信息
+4. **最多 10 个分类**：避免分类过于细碎
+5. **每个文件只属于一个分类**：不要重复分类
+6. **过滤无关文件**：如果文件明显不属于该目录（如在"小说"目录下的系统文件），归类到"其他/无关文件"
+
+**示例：**
+- 目录"小说" → 按小说类型分类：玄幻小说、科幻小说、武侠小说
+- 目录"照片" → 按时间/事件分类：2024年旅行、家庭聚会、工作照片
+- 目录"文档" → 按用途分类：工作文档、学习资料、个人笔记`;
 
             const response = await this.aiChat.sendMessage(prompt, []);
 
@@ -137,9 +182,33 @@ ${JSON.stringify(fileInfos, null, 2)}
         }
 
         // 降级到基础分类
-        // 降级到基础分类
         return this.basicCategorize(files);
     }
+
+    /**
+     * 推断目录用途
+     */
+    inferDirectoryPurpose(folderName) {
+        const purposes = {
+            '小说': '存放小说电子书，应按小说类型（玄幻、科幻、武侠、言情等）分类',
+            '电影': '存放电影视频，应按电影类型（动作、科幻、爱情等）或年份分类',
+            '音乐': '存放音乐文件，应按歌手、专辑或音乐类型分类',
+            '照片': '存放照片，应按时间、事件或人物分类',
+            '文档': '存放文档，应按用途（工作、学习、个人）分类',
+            '下载': '临时下载文件，应按文件类型或用途分类',
+            '项目': '存放项目文件，应按项目名称或技术栈分类',
+            '备份': '备份文件，应按备份时间或来源分类'
+        };
+
+        for (const [key, purpose] of Object.entries(purposes)) {
+            if (folderName.includes(key)) {
+                return purpose;
+            }
+        }
+
+        return '通用文件夹，应根据文件类型和用途智能分类';
+    }
+
 
     /**
      * AI 调整分类

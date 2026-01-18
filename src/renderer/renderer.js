@@ -980,6 +980,18 @@ async function initAIChat() {
     document.getElementById('btn-save-ai-config')?.addEventListener('click', saveAIConfig);
     document.getElementById('btn-test-ai-connection')?.addEventListener('click', testAIConnection);
 
+    // 绑定聊天事件
+    document.getElementById('btn-send-chat')?.addEventListener('click', sendAIChatMessage);
+    document.getElementById('chat-input')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendAIChatMessage();
+    });
+
+    // 绑定抽屉控制事件
+    document.getElementById('btn-open-chat-drawer')?.addEventListener('click', openChatDrawer);
+    document.getElementById('btn-open-chat-drawer-tab')?.addEventListener('click', openChatDrawer);
+    document.getElementById('btn-close-chat-drawer')?.addEventListener('click', closeChatDrawer);
+    document.getElementById('chat-drawer-overlay')?.addEventListener('click', closeChatDrawer);
+
     // 初始化模型列表
     onProviderChange();
 }
@@ -1098,8 +1110,9 @@ async function testAIConnection() {
 }
 
 // 发送 AI 聊天消息
+// 发送 AI 聊天消息
 window.sendAIChatMessage = async function () {
-    const input = document.getElementById('ai-chat-input');
+    const input = document.getElementById('chat-input');
     const message = input?.value?.trim();
 
     if (!message) return;
@@ -1152,23 +1165,23 @@ window.sendAIChatMessage = async function () {
 
 // 添加聊天消息
 function addChatMessage(role, content, isLoading = false) {
-    const messagesEl = document.getElementById('ai-chat-messages');
+    const messagesEl = document.getElementById('chat-history');
     const msgId = 'msg-' + Date.now();
 
     const div = document.createElement('div');
-    div.className = 'flex gap-3';
+    div.className = 'flex items-start gap-3';
     div.id = msgId;
 
     if (role === 'user') {
         div.innerHTML = `
-            < div class="flex-1" ></div >
-      <div class="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-3 text-sm text-white max-w-[80%]">${escapeHtml(content)}</div>
-      <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-sm flex-shrink-0">👤</div>
+            <div class="flex-1"></div>
+            <div class="bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg p-3 text-sm text-white max-w-[80%] break-words">${escapeHtml(content)}</div>
+            <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-sm flex-shrink-0">👤</div>
         `;
     } else {
         div.innerHTML = `
-            < div class="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm flex-shrink-0" > AI</div >
-                <div class="flex-1 bg-slate-800 rounded-lg p-3 text-sm text-slate-200 max-w-[80%]">${content}</div>
+            <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm flex-shrink-0">🤖</div>
+            <div class="flex-1 bg-slate-800/80 rounded-lg rounded-tl-none p-3 text-sm text-slate-200 max-w-[80%] break-words">${content}</div>
         `;
     }
 
@@ -1185,10 +1198,29 @@ function removeChatMessage(msgId) {
 
 // 格式化 AI 回复
 function formatAIResponse(content) {
-    // 转换 markdown 格式
+    // 先转义 HTML
     content = escapeHtml(content);
-    content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    // 移除 JSON 代码块（AI 的操作指令）
+    content = content.replace(/\{[\s\S]*?"action"[\s\S]*?\}/g, '');
+
+    // 转换 Markdown 格式
+    // 粗体
+    content = content.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
+    // 斜体
+    content = content.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
+    // 代码
+    content = content.replace(/`(.*?)`/g, '<code class="bg-slate-700 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
+
+    // 列表项（数字列表）
+    content = content.replace(/^\d+\.\s+(.+)$/gm, '<div class="ml-4">• $1</div>');
+
+    // 换行
     content = content.replace(/\n/g, '<br>');
+
+    // 清理多余的空白
+    content = content.replace(/<br>\s*<br>\s*<br>/g, '<br><br>');
+
     return content;
 }
 
@@ -1200,23 +1232,394 @@ function escapeHtml(text) {
 }
 
 // 处理 AI 操作指令
-function handleAIAction(action) {
-    const actionsHtml = {
-        scan_junk: '<button class="mt-2 px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600" onclick="document.querySelector(\'[data-page=junk-cleaner]\').click(); setTimeout(()=>document.getElementById(\'btn-scan-junk\').click(), 300)">📍 去扫描垃圾</button>',
-        clean_junk: '<button class="mt-2 px-3 py-1.5 text-xs rounded bg-emerald-500 text-white hover:bg-emerald-600" onclick="document.querySelector(\'[data-page=junk-cleaner]\').click()">📍 去清理垃圾</button>',
-        scan_large: '<button class="mt-2 px-3 py-1.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600" onclick="document.querySelector(\'[data-page=large-files]\').click(); setTimeout(()=>document.getElementById(\'btn-scan-large\').click(), 300)">📍 去扫描大文件</button>'
-    };
+async function handleAIAction(action) {
+    if (!action || !action.action) return;
 
-    if (actionsHtml[action.action]) {
-        addChatMessage('ai', actionsHtml[action.action]);
+    // 添加执行提示
+    const executingMsg = addChatMessage('ai', `
+        <div class="flex items-center gap-2 text-blue-400">
+            <div class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <span>正在执行：${getActionName(action.action)}...</span>
+        </div>
+    `);
+
+    try {
+        let result;
+        switch (action.action) {
+            case 'scan_junk':
+                result = await window.electronAPI.scanJunkFiles();
+                if (result.success) {
+                    displayScanResults('垃圾文件扫描', result.data);
+                }
+                break;
+
+            case 'scan_large':
+                const targetPath = action.path || 'C:';
+                result = await window.electronAPI.scanLargeFiles({
+                    targetPath: targetPath,
+                    minSize: 100 * 1024 * 1024, // 100MB
+                    fileTypes: []
+                });
+                if (result.success) {
+                    displayLargeFilesResults(result.data, targetPath);
+                }
+                break;
+
+            case 'clean_junk':
+                // 需要用户确认
+                addChatMessage('ai', `
+                    <div class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                        <div class="font-semibold text-amber-400 mb-2">⚠️ 清理确认</div>
+                        <div class="text-sm mb-3">清理操作将删除文件，请先扫描查看详情。</div>
+                        <button onclick="executeScanJunk()" class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm">
+                            先扫描查看
+                        </button>
+                    </div>
+                `);
+                break;
+
+            case 'organize_files':
+                // 整理文件 - 直接在对话中完成
+                try {
+                    // 1. 选择文件夹
+                    const folderResult = await window.electronAPI.selectFolder();
+                    if (!folderResult || !folderResult.success) {
+                        addChatMessage('ai', `
+                            <div class="text-amber-400">
+                                ⚠️ 用户取消了选择。
+                            </div>
+                        `);
+                        break;
+                    }
+
+                    const selectedPath = folderResult.path;
+
+                    // 2. 扫描文件夹获取所有文件
+                    addChatMessage('ai', `
+                        <div class="flex items-center gap-2 text-blue-400">
+                            <div class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span>正在扫描 ${selectedPath}...</span>
+                        </div>
+                    `);
+
+                    const scanResult = await window.electronAPI.scanLargeFiles({
+                        targetPath: selectedPath,
+                        minSize: 0, // 获取所有文件，不限制大小
+                        fileTypes: []
+                    });
+
+                    if (!scanResult || !scanResult.success || !scanResult.data || !scanResult.data.files || scanResult.data.files.length === 0) {
+                        addChatMessage('ai', `
+                            <div class="text-amber-400">
+                                ⚠️ 该目录下没有找到文件。
+                            </div>
+                        `);
+                        break;
+                    }
+
+                    const files = scanResult.data.files;
+
+                    // 3. 调用 AI 分类（传入目录路径以提供上下文）
+                    addChatMessage('ai', `
+                        <div class="flex items-center gap-2 text-blue-400">
+                            <div class="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                            <span>AI 正在分析 ${files.length} 个文件...</span>
+                        </div>
+                    `);
+
+                    const categorizeResult = await window.electronAPI.aiCategorizeFiles({
+                        files: files,
+                        directoryPath: selectedPath
+                    });
+
+                    if (categorizeResult.success) {
+                        displayOrganizeResults(categorizeResult.data, selectedPath);
+                    } else {
+                        addChatMessage('ai', `
+                            <div class="text-red-400">
+                                ❌ 分类失败：${categorizeResult.error || '未知错误'}
+                            </div>
+                        `);
+                    }
+                } catch (error) {
+                    addChatMessage('ai', `
+                        <div class="text-red-400">
+                            ❌ 整理失败：${error.message}
+                        </div>
+                    `);
+                }
+                break;
+
+            default:
+                addChatMessage('ai', `<div class="text-amber-400">⚠️ 未知操作：${action.action}</div>`);
+        }
+    } catch (error) {
+        addChatMessage('ai', `<div class="text-red-400">❌ 执行失败：${error.message}</div>`);
+    } finally {
+        // 移除执行提示
+        removeChatMessage(executingMsg);
     }
 }
 
+// 获取操作名称
+function getActionName(action) {
+    const names = {
+        scan_junk: '扫描垃圾文件',
+        scan_large: '扫描大文件',
+        clean_junk: '清理垃圾',
+        scan_duplicates: '扫描重复文件',
+        organize_files: '智能整理文件'
+    };
+    return names[action] || action;
+}
+
+// 显示扫描结果
+function displayScanResults(title, data) {
+    const totalSize = Object.values(data.categories || {}).reduce((sum, cat) => sum + cat.totalSize, 0);
+    const totalFiles = Object.values(data.categories || {}).reduce((sum, cat) => sum + cat.files.length, 0);
+
+    let html = `
+        <div class="bg-slate-900 border border-slate-700 rounded-lg p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+                <div class="font-semibold text-white">${title} 结果</div>
+                <div class="text-xs text-slate-400">${new Date().toLocaleTimeString()}</div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-800/50 rounded p-2">
+                    <div class="text-xs text-slate-400">文件数量</div>
+                    <div class="text-lg font-semibold text-blue-400">${totalFiles}</div>
+                </div>
+                <div class="bg-slate-800/50 rounded p-2">
+                    <div class="text-xs text-slate-400">占用空间</div>
+                    <div class="text-lg font-semibold text-emerald-400">${formatSize(totalSize)}</div>
+                </div>
+            </div>
+
+            <div class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
+    `;
+
+    for (const [category, info] of Object.entries(data.categories || {})) {
+        html += `
+            <div class="bg-slate-800/30 rounded p-2">
+                <div class="flex items-center justify-between text-sm">
+                    <span class="text-slate-300">${category}</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400">${info.files.length} 个文件</span>
+                        <span class="text-xs font-semibold text-emerald-400">${formatSize(info.totalSize)}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    html += `
+            </div>
+            <button onclick="expandResults('${title}')" class="w-full py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded text-sm transition-colors">
+                📊 查看详细信息
+            </button>
+        </div>
+    `;
+
+    addChatMessage('ai', html);
+}
+
+// 显示大文件扫描结果
+function displayLargeFilesResults(data, path) {
+    const files = data.files || [];
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+
+    let html = `
+        <div class="bg-slate-900 border border-slate-700 rounded-lg p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+                <div class="font-semibold text-white">大文件扫描结果</div>
+                <div class="text-xs text-slate-400">${path}</div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-800/50 rounded p-2">
+                    <div class="text-xs text-slate-400">大文件数量</div>
+                    <div class="text-lg font-semibold text-blue-400">${files.length}</div>
+                </div>
+                <div class="bg-slate-800/50 rounded p-2">
+                    <div class="text-xs text-slate-400">总大小</div>
+                    <div class="text-lg font-semibold text-emerald-400">${formatSize(totalSize)}</div>
+                </div>
+            </div>
+
+            <div class="space-y-1 max-h-64 overflow-y-auto custom-scrollbar">
+    `;
+
+    files.slice(0, 10).forEach(file => {
+        const fileName = file.path.split('\\').pop();
+        html += `
+            <div class="bg-slate-800/30 rounded p-2 text-xs">
+                <div class="flex items-center justify-between">
+                    <span class="text-slate-300 truncate flex-1">${fileName}</span>
+                    <span class="text-emerald-400 font-semibold ml-2">${formatSize(file.size)}</span>
+                </div>
+            </div>
+        `;
+    });
+
+    if (files.length > 10) {
+        html += `<div class="text-center text-xs text-slate-500 py-2">还有 ${files.length - 10} 个文件...</div>`;
+    }
+
+    html += `
+            </div>
+            <button onclick="expandResults('大文件')" class="w-full py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded text-sm transition-colors">
+                📊 在主界面查看全部
+            </button>
+        </div>
+    `;
+
+    addChatMessage('ai', html);
+}
+
+// 显示文件整理结果
+function displayOrganizeResults(categories, path) {
+    const totalFiles = Object.values(categories).reduce((sum, files) => sum + files.length, 0);
+    const categoryCount = Object.keys(categories).length;
+
+    let html = `
+        <div class="bg-slate-900 border border-slate-700 rounded-lg p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+                <div class="font-semibold text-white">📂 智能分类结果</div>
+                <div class="text-xs text-slate-400">${path}</div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-800/50 rounded p-2">
+                    <div class="text-xs text-slate-400">文件总数</div>
+                    <div class="text-lg font-semibold text-blue-400">${totalFiles}</div>
+                </div>
+                <div class="bg-slate-800/50 rounded p-2">
+                    <div class="text-xs text-slate-400">分类数量</div>
+                    <div class="text-lg font-semibold text-emerald-400">${categoryCount} 个</div>
+                </div>
+            </div>
+
+            <div class="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
+    `;
+
+    for (const [category, files] of Object.entries(categories)) {
+        html += `
+            <div class="bg-slate-800/30 rounded p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-sm font-semibold text-blue-400">📁 ${category}</span>
+                    <span class="text-xs text-slate-400">${files.length} 个文件</span>
+                </div>
+                <div class="space-y-1">
+        `;
+
+        files.slice(0, 5).forEach(file => {
+            const fileName = file.name || (file.path ? file.path.split('\\').pop() : '未知文件');
+            html += `
+                <div class="text-xs text-slate-300 truncate pl-2">• ${fileName}</div>
+            `;
+        });
+
+        if (files.length > 5) {
+            html += `<div class="text-xs text-slate-500 pl-2">还有 ${files.length - 5} 个文件...</div>`;
+        }
+
+        html += `
+                </div>
+            </div>
+        `;
+    }
+
+    html += `
+            </div>
+            <div class="flex gap-2">
+                <button onclick="applyOrganization('${path}')" class="flex-1 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded text-sm transition-colors font-semibold">
+                    ✅ 应用分类
+                </button>
+                <button onclick="closeChatDrawer()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm transition-colors">
+                    取消
+                </button>
+            </div>
+        </div>
+    `;
+
+    addChatMessage('ai', html);
+}
+
+// 展开查看完整结果
+window.expandResults = function (type) {
+    if (type.includes('垃圾')) {
+        document.querySelector('[data-page="junk-cleaner"]')?.click();
+    } else if (type.includes('大文件')) {
+        document.querySelector('[data-page="large-files"]')?.click();
+    }
+    closeChatDrawer();
+};
+
+// 执行垃圾扫描
+window.executeScanJunk = async function () {
+    handleAIAction({ action: 'scan_junk' });
+};
+
+// 应用文件整理
+window.applyOrganization = function (path) {
+    addChatMessage('ai', `
+        <div class="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+            <div class="font-semibold text-blue-400 mb-2">✅ 正在应用分类...</div>
+            <div class="text-sm text-slate-300">文件将被移动到对应的分类文件夹中</div>
+        </div>
+    `);
+
+    // 跳转到 AI 助手页面执行分类
+    setTimeout(() => {
+        document.querySelector('[data-page="ai-assistant"]')?.click();
+        setTimeout(() => {
+            document.querySelector('[data-tab="categorize"]')?.click();
+            // 触发应用分类按钮
+            setTimeout(() => {
+                document.getElementById('btn-apply-categorize')?.click();
+            }, 300);
+        }, 300);
+        closeChatDrawer();
+    }, 500);
+};
+
 // 快捷指令
 window.quickCommand = function (command) {
-    document.getElementById('ai-chat-input').value = command;
+    document.getElementById('chat-input').value = command;
     sendAIChatMessage();
 };
+
+// 打开聊天抽屉
+function openChatDrawer() {
+    const drawer = document.getElementById('chat-drawer');
+    const overlay = document.getElementById('chat-drawer-overlay');
+
+    // 显示遮罩层
+    overlay.classList.remove('hidden');
+    setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+
+    // 滑入抽屉
+    setTimeout(() => drawer.classList.remove('translate-x-full'), 10);
+
+    // 聚焦输入框
+    setTimeout(() => {
+        document.getElementById('chat-input')?.focus();
+    }, 350);
+}
+
+// 关闭聊天抽屉
+function closeChatDrawer() {
+    const drawer = document.getElementById('chat-drawer');
+    const overlay = document.getElementById('chat-drawer-overlay');
+
+    // 滑出抽屉
+    drawer.classList.add('translate-x-full');
+
+    // 隐藏遮罩层
+    overlay.classList.add('opacity-0');
+    setTimeout(() => overlay.classList.add('hidden'), 300);
+}
 
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', () => {

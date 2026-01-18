@@ -594,9 +594,10 @@ ipcMain.handle('ai-analyze-files', async (event, filePaths) => {
 });
 
 // AI 智能分类
-ipcMain.handle('ai-categorize-files', async (event, files) => {
+ipcMain.handle('ai-categorize-files', async (event, options) => {
     try {
-        const categories = await aiFileAssistant.categorizeFiles(files);
+        const { files, directoryPath } = options || {};
+        const categories = await aiFileAssistant.categorizeFiles(files, directoryPath);
         return { success: true, data: categories };
     } catch (error) {
         return { success: false, error: error.message };
