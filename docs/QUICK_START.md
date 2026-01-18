@@ -121,5 +121,5 @@ A: 目前仅支持简体中文
 ## 下一步
 
 - 查看 [跨平台支持文档](./CROSS_PLATFORM.md)
-- 查看 [产品需求文档](./PRD_AI_File_Assistant.md)
+- 查看 [产品需求文档](./PRD_MERGED.md)
 - 贡献代码或报告问题

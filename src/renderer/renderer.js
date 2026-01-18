@@ -729,23 +729,25 @@ function renderSystemInfo(info) {
 
     // 1. 系统信息
     if (osCard) {
+        osCard.className = "bg-slate-900/80 border border-slate-800/50 rounded-xl p-4 min-h-[140px] flex flex-col justify-between hover:border-blue-500/30 transition-colors group";
         osCard.innerHTML = `
-            <div class="flex items-center gap-2 mb-3">
-                <span class="text-xl">${info.platformIcon}</span>
-                <span class="text-sm font-semibold text-slate-100">系统</span>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="text-2xl group-hover:scale-110 transition-transform duration-300">🪟</span>
+                <span class="text-base font-bold text-white">系统</span>
             </div>
-            <div class="flex flex-col gap-2 text-xs">
-                <div class="flex justify-between items-center bg-slate-800/50 p-1.5 rounded border border-slate-800/50">
-                    <span class="text-slate-400">OS</span>
-                    <span class="text-slate-200 font-medium">${info.platform}</span>
+            
+            <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-500 font-medium">OS</span>
+                    <span class="text-slate-300 font-semibold">${info.platform}</span>
                 </div>
-                <div class="flex justify-between items-center bg-slate-800/50 p-1.5 rounded border border-slate-800/50">
-                    <span class="text-slate-400">Ver</span>
-                    <span class="text-slate-200 truncate max-w-[100px]" title="${info.release}">${info.release}</span>
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-500 font-medium">Ver</span>
+                    <span class="text-slate-300 font-mono tracking-tight" title="${info.release}">${info.release}</span>
                 </div>
-                <div class="flex justify-between items-center bg-slate-800/50 p-1.5 rounded border border-slate-800/50">
-                    <span class="text-slate-400">Host</span>
-                    <span class="text-slate-200 truncate max-w-[100px]" title="${info.hostname}">${info.hostname}</span>
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-500 font-medium">Host</span>
+                    <span class="text-blue-400 font-bold max-w-[100px] truncate" title="${info.hostname}">${info.hostname}</span>
                 </div>
             </div>
         `;
@@ -753,22 +755,24 @@ function renderSystemInfo(info) {
 
     // 2. CPU 信息
     if (cpuCard) {
+        cpuCard.className = "bg-slate-900/80 border border-slate-800/50 rounded-xl p-4 min-h-[140px] flex flex-col justify-between hover:border-yellow-500/30 transition-colors group";
         cpuCard.innerHTML = `
-            <div class="flex items-center gap-2 mb-3">
-                <span class="text-xl">⚡</span>
-                <span class="text-sm font-semibold text-slate-100">CPU</span>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="text-2xl group-hover:scale-110 transition-transform duration-300">⚡</span>
+                <span class="text-base font-bold text-white">CPU</span>
             </div>
-            <div class="flex flex-col gap-2 text-xs">
-                <div class="bg-slate-800/50 p-1.5 rounded border border-slate-800/50 text-slate-200 truncate" title="${info.cpuModel}">
+            
+            <div class="space-y-2">
+                 <div class="text-xs text-slate-300 font-medium truncate leading-relaxed" title="${info.cpuModel}">
                     ${info.cpuModel?.split(' ').slice(0, 3).join(' ')}...
                 </div>
-                <div class="flex justify-between items-center bg-slate-800/50 p-1.5 rounded border border-slate-800/50">
-                    <span class="text-slate-400">核心数</span>
-                    <span class="text-slate-200 font-medium">${info.cpuCores} Cores</span>
+                <div class="flex items-center justify-between text-xs pt-1 border-t border-slate-800/50">
+                    <span class="text-slate-500 font-medium">核心数</span>
+                    <span class="text-yellow-500 font-bold">${info.cpuCores} Cores</span>
                 </div>
-                <div class="flex justify-between items-center bg-slate-800/50 p-1.5 rounded border border-slate-800/50">
-                    <span class="text-slate-400">运行</span>
-                    <span class="text-slate-200">${info.uptime}</span>
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-500 font-medium">运行</span>
+                    <span class="text-slate-300">${info.uptime}</span>
                 </div>
             </div>
         `;
@@ -776,24 +780,35 @@ function renderSystemInfo(info) {
 
     // 3. 内存信息
     if (memCard) {
+        memCard.className = "bg-slate-900/80 border border-slate-800/50 rounded-xl p-4 min-h-[140px] flex flex-col justify-between hover:border-emerald-500/30 transition-colors group";
+        const totalNum = parseFloat(info.totalMemory);
+        const freeNum = parseFloat(info.freeMemory);
+        const usedPercent = Math.round(((totalNum - freeNum) / totalNum) * 100);
+
         memCard.innerHTML = `
-            <div class="flex items-center gap-2 mb-3">
-                <span class="text-xl">🧠</span>
-                <span class="text-sm font-semibold text-slate-100">内存</span>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="text-2xl group-hover:scale-110 transition-transform duration-300">🧠</span>
+                <span class="text-base font-bold text-white">内存</span>
             </div>
-            <div class="flex flex-col gap-2 text-xs">
-                <div class="flex justify-between items-center bg-slate-800/50 p-1.5 rounded border border-slate-800/50">
-                    <span class="text-slate-400">总计</span>
-                    <span class="text-slate-200 font-medium">${info.totalMemory}</span>
+            
+            <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-500 font-medium">总计</span>
+                    <span class="text-slate-300 font-bold">${info.totalMemory}</span>
                 </div>
-                <div class="flex justify-between items-center bg-slate-800/50 p-1.5 rounded border border-slate-800/50">
-                    <span class="text-slate-400">可用</span>
-                    <span class="text-emerald-500 font-bold">${info.freeMemory}</span>
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-500 font-medium">可用</span>
+                    <span class="text-emerald-400 font-bold">${info.freeMemory}</span>
                 </div>
-                <!-- 简单的内存条 -->
-                <div class="h-1.5 bg-slate-700 rounded-full overflow-hidden mt-1">
-                    <div class="h-full bg-emerald-500 rounded-full" style="width: ${Math.round((parseFloat(info.totalMemory) - parseFloat(info.freeMemory)) / parseFloat(info.totalMemory) * 100)}%"></div>
+                
+                <div class="mt-2 text-[10px] text-slate-600 flex justify-between items-center">
+                    <span>使用率</span>
+                    <span class="${usedPercent > 80 ? 'text-red-400' : 'text-slate-400'}">${usedPercent}%</span>
                 </div>
+            </div>
+            
+             <div class="absolute bottom-0 left-0 w-full h-1 bg-slate-800 rounded-b-xl overflow-hidden">
+                <div class="h-full ${usedPercent > 80 ? 'bg-red-500' : 'bg-emerald-500'} transition-all duration-1000" style="width: ${usedPercent}%"></div>
             </div>
         `;
     }
