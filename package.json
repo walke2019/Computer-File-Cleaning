@@ -1,0 +1,76 @@
+{
+  "name": "smart-file-organizer",
+  "version": "1.0.0",
+  "description": "AI 智能文件整理助手 - 支持 Windows 和 macOS 的文件清理与管理工具",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:all": "electron-builder --win --mac",
+    "pack": "electron-builder --dir"
+  },
+  "keywords": [
+    "file-organizer",
+    "cleaner",
+    "disk",
+    "cleanup",
+    "ai",
+    "cross-platform",
+    "windows",
+    "macos"
+  ],
+  "author": "Smart File Organizer Team",
+  "license": "MIT",
+  "devDependencies": {
+    "autoprefixer": "^10.4.23",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.4.0",
+    "electron-packager": "^17.1.2",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18"
+  },
+  "build": {
+    "appId": "com.smartfileorganizer.app",
+    "productName": "智能文件整理助手",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.utilities"
+    },
+    "portable": {
+      "artifactName": "智能文件整理助手_${version}_${os}.${ext}"
+    }
+  }
+}

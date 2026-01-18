@@ -1,0 +1,1141 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:;">
+  <title>智能文件整理助手</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            purple: {
+              500: '#a855f7',
+              600: '#9333ea',
+              700: '#7e22ce',
+            },
+            pink: {
+              500: '#ec4899',
+              600: '#db2777',
+            }
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.3s ease-out',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0', transform: 'translateY(10px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .titlebar-drag {
+      -webkit-app-region: drag;
+    }
+
+    .titlebar-no-drag {
+      -webkit-app-region: no-drag;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    ::selection {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .progress-indeterminate {
+      animation: indeterminate 1.5s ease-in-out infinite;
+    }
+
+    @keyframes indeterminate {
+      0% {
+        transform: translateX(-100%);
+      }
+
+      100% {
+        transform: translateX(400%);
+      }
+    }
+
+    .text-gradient-blue {
+      background: linear-gradient(135deg, #3b82f6, #06b6d4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .text-gradient-warm {
+      background: linear-gradient(135deg, #fbbf24, #f97316);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-icon svg {
+      width: 20px;
+      height: 20px;
+    }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 font-sans h-full overflow-hidden">
+  <!-- 自定义标题栏 -->
+  <div
+    class="flex items-center justify-between h-10 bg-gradient-to-r from-slate-900 to-slate-800 border-b border-slate-800/50 select-none titlebar-drag">
+    <div class="flex items-center pl-4 gap-3">
+      <span class="text-xl">🧠</span>
+      <span class="text-sm font-bold text-gradient-blue">智能文件整理助手</span>
+      <span
+        class="text-[10px] font-bold px-1.5 py-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded uppercase">AI</span>
+      <span id="platform-badge" class="text-[10px] px-1.5 py-0.5 bg-slate-700 text-slate-300 rounded"></span>
+    </div>
+    <div class="flex titlebar-no-drag">
+      <button
+        class="w-12 h-10 flex items-center justify-center text-slate-400 hover:bg-slate-700/50 hover:text-white transition-colors"
+        id="btn-minimize" title="最小化">
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <rect y="5" width="12" height="2" fill="currentColor" />
+        </svg>
+      </button>
+      <button
+        class="w-12 h-10 flex items-center justify-center text-slate-400 hover:bg-slate-700/50 hover:text-white transition-colors"
+        id="btn-maximize" title="最大化">
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1.5" fill="none" />
+        </svg>
+      </button>
+      <button
+        class="w-12 h-10 flex items-center justify-center text-slate-400 hover:bg-red-500 hover:text-white transition-colors"
+        id="btn-close" title="关闭">
+        <svg width="12" height="12" viewBox="0 0 12 12">
+          <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 主容器 -->
+  <div class="flex h-[calc(100vh-40px)]" style="height: calc(100vh - 40px); display: flex;">
+    <!-- 侧边导航 -->
+    <nav class="w-56 bg-slate-900 border-r border-slate-800 flex flex-col py-4 overflow-y-auto">
+      <div class="px-3 mb-5">
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">清理工具</div>
+        <div class="space-y-1">
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/25"
+            data-page="junk-cleaner">
+            <span class="nav-icon" id="icon-trash"></span>
+            <span class="text-sm font-medium">垃圾清理</span>
+          </button>
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="large-files">
+            <span class="nav-icon" id="icon-file-chart"></span>
+            <span class="text-sm font-medium">大文件管理</span>
+          </button>
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="empty-folders">
+            <span class="nav-icon" id="icon-folder"></span>
+            <span class="text-sm font-medium">空文件夹清理</span>
+          </button>
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="duplicates">
+            <span class="nav-icon" id="icon-copy"></span>
+            <span class="text-sm font-medium">重复文件查找</span>
+          </button>
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="ai-assistant">
+            <span class="nav-icon" id="icon-brain"></span>
+            <span class="text-sm font-medium">AI 智能助手</span>
+            <span
+              class="ml-auto text-[10px] font-bold px-1.5 py-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded">AI</span>
+          </button>
+        </div>
+      </div>
+      <div class="px-3 mb-5">
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">系统信息</div>
+        <div class="space-y-1">
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="disk-info">
+            <span class="nav-icon" id="icon-hard-drive"></span>
+            <span class="text-sm font-medium">磁盘空间</span>
+          </button>
+
+        </div>
+      </div>
+      <div class="px-3 mb-5">
+        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">设置</div>
+        <div class="space-y-1">
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="history">
+            <span class="nav-icon" id="icon-clock"></span>
+            <span class="text-sm font-medium">清理历史</span>
+          </button>
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="whitelist">
+            <span class="nav-icon" id="icon-shield"></span>
+            <span class="text-sm font-medium">白名单</span>
+          </button>
+          <button
+            class="nav-item w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all text-slate-400 hover:bg-slate-800 hover:text-white"
+            data-page="settings">
+            <span class="nav-icon" id="icon-settings"></span>
+            <span class="text-sm font-medium">设置</span>
+          </button>
+        </div>
+      </div>
+      <div class="mt-auto px-4">
+        <!-- 主题切换 -->
+        <div class="mb-3 flex items-center justify-between">
+          <button
+            class="flex items-center gap-2 px-3 py-2 text-xs rounded-lg border border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-white transition-all w-full justify-center"
+            id="btn-toggle-theme" title="切换主题">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" id="theme-icon-sun">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round" id="theme-icon-moon" class="hidden">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+            <span class="text-xs" id="theme-text">暗色</span>
+          </button>
+        </div>
+        <div class="mb-3">
+          <div class="h-1 bg-slate-800 rounded-full overflow-hidden mb-1.5">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-500"
+              id="storage-mini-fill" style="width: 0%"></div>
+          </div>
+          <div class="text-[11px] text-slate-500" id="storage-mini-text">C盘: --</div>
+        </div>
+        <div class="text-[11px] text-slate-600 text-center">v1.0.0</div>
+      </div>
+    </nav>
+
+    <!-- 内容区域 -->
+    <main class="flex-1 overflow-y-auto p-7 bg-slate-950" style="flex: 1; overflow-y: auto;">
+      <!-- 垃圾清理页面 -->
+      <section class="page" id="page-junk-cleaner">
+        <div class="flex justify-between items-start mb-6">
+          <div>
+            <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">🗑️ 垃圾文件清理</h1>
+            <p class="text-slate-400 text-sm">深度扫描系统垃圾、应用缓存、浏览器数据等，释放磁盘空间</p>
+          </div>
+          <div class="flex gap-4">
+            <div class="text-center px-4 py-2.5 bg-slate-900/80 border border-slate-800/50 rounded-xl">
+              <span class="block text-lg font-bold text-gradient-warm" id="header-junk-size">--</span>
+              <span class="text-xs text-slate-500">可清理</span>
+            </div>
+            <div class="text-center px-4 py-2.5 bg-slate-900/80 border border-slate-800/50 rounded-xl">
+              <span class="block text-lg font-bold text-gradient-blue" id="header-junk-count">--</span>
+              <span class="text-xs text-slate-500">文件数</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 磁盘状态概览 -->
+        <div id="home-disk-info" class="mb-6"></div>
+
+        <!-- 系统信息概览 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" id="system-info-grid">
+          <div id="dash-os"
+            class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-4 min-h-[100px] flex items-center justify-center">
+            <div class="animate-pulse w-full">
+              <div class="h-4 bg-slate-800 rounded w-1/3 mb-2"></div>
+              <div class="h-10 bg-slate-800 rounded w-full"></div>
+            </div>
+          </div>
+          <div id="dash-cpu"
+            class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-4 min-h-[100px] flex items-center justify-center">
+            <div class="animate-pulse w-full">
+              <div class="h-4 bg-slate-800 rounded w-1/3 mb-2"></div>
+              <div class="h-10 bg-slate-800 rounded w-full"></div>
+            </div>
+          </div>
+          <div id="dash-mem"
+            class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-4 min-h-[100px] flex items-center justify-center">
+            <div class="animate-pulse w-full">
+              <div class="h-4 bg-slate-800 rounded w-1/3 mb-2"></div>
+              <div class="h-10 bg-slate-800 rounded w-full"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-3 mb-6 items-center">
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            id="btn-scan-junk">🔍 开始扫描</button>
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            id="btn-clean-junk" disabled>✨ 一键清理</button>
+          <div class="ml-auto flex gap-2">
+            <button
+              class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-400 transition-all"
+              id="btn-select-all-junk">全选</button>
+            <button
+              class="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-400 transition-all"
+              id="btn-deselect-all-junk">取消全选</button>
+          </div>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 mb-6 hidden" id="junk-progress">
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold text-white text-sm">正在扫描...</span>
+            <span class="font-bold text-blue-400 progress-percent">0%</span>
+          </div>
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden mb-2">
+            <div
+              class="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-300 progress-fill"
+              style="width: 0%"></div>
+          </div>
+          <div class="text-xs text-slate-500 truncate progress-detail">准备中...</div>
+          <div class="flex gap-4 mt-2 text-xs text-slate-400">
+            <span>已扫描: <strong class="text-white" id="progress-scanned">0</strong> 个文件</span>
+            <span>发现垃圾: <strong class="text-white" id="progress-found">0</strong></span>
+          </div>
+        </div>
+        <div class="hidden" id="junk-results">
+          <div class="space-y-4" id="junk-category-groups"></div>
+        </div>
+      </section>
+
+
+      <!-- 大文件管理页面 -->
+      <section class="page hidden" id="page-large-files">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">📊 大文件管理</h1>
+          <p class="text-slate-400 text-sm">扫描磁盘中的大文件，快速定位占用空间的"大户"</p>
+        </div>
+        <div class="flex gap-4 mb-5 flex-wrap">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-slate-400">目标磁盘</label>
+            <select class="px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+              id="target-drive">
+              <option value="C:">C: 系统盘</option>
+              <option value="D:">D:</option>
+              <option value="E:">E:</option>
+              <option value="F:">F:</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-slate-400">最小文件大小</label>
+            <select class="px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+              id="min-file-size">
+              <option value="50">50 MB</option>
+              <option value="100" selected>100 MB</option>
+              <option value="200">200 MB</option>
+              <option value="500">500 MB</option>
+              <option value="1000">1 GB</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-slate-400">文件类型</label>
+            <select class="px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+              id="file-type-filter">
+              <option value="">全部类型</option>
+              <option value="video">🎬 视频</option>
+              <option value="audio">🎵 音频</option>
+              <option value="image">🖼️ 图片</option>
+              <option value="archive">📦 压缩包</option>
+              <option value="installer">💿 安装包</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-3 mb-6 items-center">
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+            id="btn-scan-large">🔍 扫描大文件</button>
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-800 transition-all hidden"
+            id="btn-stop-scan">⏹️ 停止</button>
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+            id="btn-delete-selected" disabled>🗑️ 移至回收站 (<span id="selected-count">0</span>)</button>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 mb-6 hidden" id="large-progress">
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold text-white text-sm">正在扫描...</span>
+            <span class="text-xs text-slate-400" id="large-scan-info">已扫描 0 个文件</span>
+          </div>
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden mb-2">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full w-1/3 progress-indeterminate">
+            </div>
+          </div>
+          <div class="text-xs text-slate-500 truncate" id="large-scan-path">准备中...</div>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 mb-5 hidden" id="type-chart-container">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-sm font-semibold text-white">📈 文件类型分布</h3>
+            <div class="text-xs text-slate-400">共 <strong class="text-white" id="chart-total-size">0</strong>，<strong
+                class="text-white" id="chart-total-count">0</strong> 个文件</div>
+          </div>
+          <div class="flex h-5 rounded-lg overflow-hidden mb-3 bg-slate-800" id="type-chart"></div>
+          <div class="flex flex-wrap gap-3" id="type-legend"></div>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl overflow-hidden hidden" id="large-file-list">
+          <div class="flex justify-between items-center px-4 py-3 bg-slate-800/50 border-b border-slate-800">
+            <div class="flex items-center gap-3 text-xs text-slate-400">
+              <span>发现 <strong class="text-white" id="large-file-count">0</strong> 个大文件</span>
+              <span>共 <strong class="text-amber-400" id="large-total-size">0 MB</strong></span>
+            </div>
+            <div class="flex gap-2 items-center">
+              <button
+                class="px-2 py-1 text-xs font-semibold rounded border border-slate-700 text-slate-400 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-400 transition-all"
+                id="btn-select-all">全选</button>
+              <button
+                class="px-2 py-1 text-xs font-semibold rounded border border-slate-700 text-slate-400 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-400 transition-all"
+                id="btn-deselect-all">取消</button>
+              <select class="px-2 py-1 text-xs bg-slate-800 border border-slate-800 rounded text-slate-200"
+                id="sort-by">
+                <option value="size">按大小</option>
+                <option value="date">按日期</option>
+                <option value="name">按名称</option>
+              </select>
+            </div>
+          </div>
+          <div class="max-h-[400px] overflow-y-auto" id="file-list"></div>
+        </div>
+      </section>
+
+      <!-- 空文件夹清理页面 -->
+      <section class="page hidden" id="page-empty-folders">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">📂 空文件夹清理</h1>
+          <p class="text-slate-400 text-sm">查找并删除磁盘中的空文件夹，保持系统整洁</p>
+        </div>
+        <div class="flex gap-4 mb-5 items-end">
+          <div class="flex flex-col gap-1 flex-1">
+            <label class="text-xs font-medium text-slate-400">扫描目录</label>
+            <div class="flex gap-2">
+              <input type="text"
+                class="flex-1 px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200 placeholder-slate-500"
+                id="empty-folder-path" placeholder="C:\Users" value="C:\Users">
+              <button
+                class="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-700 transition-all"
+                id="btn-browse-empty">浏览...</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-3 mb-6">
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+            id="btn-scan-empty">🔍 扫描空文件夹</button>
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+            id="btn-delete-empty" disabled>🗑️ 删除选中 (<span id="empty-selected-count">0</span>)</button>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 mb-6 hidden" id="empty-progress">
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold text-white text-sm">正在扫描...</span>
+            <span class="text-xs text-slate-400" id="empty-scan-info">已扫描 0 个目录</span>
+          </div>
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden mb-2">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full w-1/3 progress-indeterminate">
+            </div>
+          </div>
+          <div class="text-xs text-slate-500 truncate" id="empty-scan-path">准备中...</div>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl overflow-hidden hidden"
+          id="empty-folder-list">
+          <div class="flex justify-between items-center px-4 py-3 bg-slate-800/50 border-b border-slate-800">
+            <span class="text-xs text-slate-400">发现 <strong class="text-white" id="empty-folder-count">0</strong>
+              个空文件夹</span>
+            <div class="flex gap-2">
+              <button
+                class="px-2 py-1 text-xs font-semibold rounded border border-slate-700 text-slate-400 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-400 transition-all"
+                id="btn-select-all-empty">全选</button>
+              <button
+                class="px-2 py-1 text-xs font-semibold rounded border border-slate-700 text-slate-400 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-400 transition-all"
+                id="btn-deselect-all-empty">取消</button>
+            </div>
+          </div>
+          <div class="max-h-[400px] overflow-y-auto" id="empty-list"></div>
+        </div>
+      </section>
+
+      <!-- 重复文件查找页面 -->
+      <section class="page hidden" id="page-duplicates">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">🔄 重复文件查找</h1>
+          <p class="text-slate-400 text-sm">基于文件名和大小查找重复文件，释放冗余空间</p>
+        </div>
+        <div class="flex gap-4 mb-5 items-end flex-wrap">
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-slate-400">扫描目录</label>
+            <div class="flex gap-2">
+              <input type="text"
+                class="w-64 px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+                id="duplicate-path" value="C:\Users">
+              <button
+                class="px-3 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-700 transition-all"
+                id="btn-browse-duplicate">浏览...</button>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-xs font-medium text-slate-400">最小文件大小</label>
+            <select class="px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+              id="duplicate-min-size">
+              <option value="1048576">1 MB</option>
+              <option value="5242880" selected>5 MB</option>
+              <option value="10485760">10 MB</option>
+              <option value="52428800">50 MB</option>
+            </select>
+          </div>
+        </div>
+        <div class="flex gap-3 mb-6">
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+            id="btn-scan-duplicates">🔍 查找重复文件</button>
+          <button
+            class="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg shadow-red-500/25 hover:-translate-y-0.5 transition-all disabled:opacity-50"
+            id="btn-delete-duplicates" disabled>🗑️ 删除重复 (<span id="duplicate-wasted">0</span>)</button>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 mb-6 hidden" id="duplicate-progress">
+          <div class="flex justify-between items-center mb-2">
+            <span class="font-semibold text-white text-sm">正在扫描...</span>
+            <span class="text-xs text-slate-400" id="duplicate-scan-info">已扫描 0 个文件</span>
+          </div>
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden mb-2">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full w-1/3 progress-indeterminate">
+            </div>
+          </div>
+          <div class="text-xs text-slate-500 truncate" id="duplicate-scan-path">准备中...</div>
+        </div>
+        <div class="hidden" id="duplicate-results">
+          <div class="flex items-center justify-between mb-4">
+            <div class="text-sm text-slate-400">
+              发现 <strong class="text-white" id="duplicate-group-count">0</strong> 组重复文件，可释放 <strong
+                class="text-amber-400" id="duplicate-total-wasted">0</strong>
+            </div>
+          </div>
+          <div class="space-y-3" id="duplicate-list"></div>
+        </div>
+      </section>
+
+      <!-- 磁盘信息页面 -->
+      <section class="page hidden" id="page-disk-info">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">💾 磁盘空间</h1>
+          <p class="text-slate-400 text-sm">查看各磁盘使用情况</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="disk-cards">
+          <div class="flex flex-col items-center justify-center py-12 text-slate-500">
+            <div class="w-8 h-8 border-4 border-slate-800 border-t-blue-500 rounded-full animate-spin mb-3"></div>
+            <span class="text-sm">正在获取磁盘信息...</span>
+          </div>
+        </div>
+      </section>
+
+
+
+      <!-- 清理历史页面 -->
+      <section class="page hidden" id="page-history">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">📜 清理历史</h1>
+          <p class="text-slate-400 text-sm">查看历史清理记录和统计数据</p>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6" id="history-stats">
+          <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 text-center">
+            <div class="text-2xl font-bold text-gradient-blue" id="stat-total-cleaned">--</div>
+            <div class="text-xs text-slate-500 mt-1">总释放空间</div>
+          </div>
+          <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 text-center">
+            <div class="text-2xl font-bold text-gradient-warm" id="stat-total-files">--</div>
+            <div class="text-xs text-slate-500 mt-1">总删除文件</div>
+          </div>
+          <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 text-center">
+            <div class="text-2xl font-bold text-white" id="stat-clean-count">--</div>
+            <div class="text-xs text-slate-500 mt-1">清理次数</div>
+          </div>
+        </div>
+        <div class="flex gap-3 mb-5">
+          <button
+            class="px-4 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 hover:-translate-y-0.5 transition-all"
+            id="btn-export-report">📊 导出报告</button>
+          <button
+            class="px-4 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-red-500/10 hover:border-red-500 hover:text-red-400 transition-all"
+            id="btn-clear-history">清空历史</button>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl overflow-hidden">
+          <div class="px-4 py-3 bg-slate-800/50 border-b border-slate-800 text-xs font-semibold text-slate-400">最近清理记录
+          </div>
+          <div class="max-h-[350px] overflow-y-auto" id="history-list">
+            <div class="p-8 text-center text-slate-500 text-sm">暂无清理记录</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 白名单页面 -->
+      <section class="page hidden" id="page-whitelist">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">🚫 白名单管理</h1>
+          <p class="text-slate-400 text-sm">添加不希望被清理或扫描的路径</p>
+        </div>
+        <div class="flex gap-2 mb-5">
+          <input type="text"
+            class="flex-1 max-w-md px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200 placeholder-slate-500"
+            id="whitelist-input" placeholder="输入路径，如 C:\重要文件">
+          <button
+            class="px-4 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-700 transition-all"
+            id="btn-browse-whitelist">浏览...</button>
+          <button
+            class="px-4 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 hover:-translate-y-0.5 transition-all"
+            id="btn-add-whitelist">➕ 添加</button>
+        </div>
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl overflow-hidden">
+          <div class="px-4 py-3 bg-slate-800/50 border-b border-slate-800 text-xs font-semibold text-slate-400">白名单路径
+          </div>
+          <div class="max-h-[350px] overflow-y-auto" id="whitelist-list">
+            <div class="p-8 text-center text-slate-500 text-sm">暂无白名单路径</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- AI 智能助手页面 -->
+      <section class="page hidden" id="page-ai-assistant">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">
+            🤖 AI 智能助手
+          </h1>
+          <p class="text-sm text-slate-400">使用 AI 智能分析、分类和重命名文件</p>
+        </div>
+
+        <!-- AI 配置状态 -->
+        <div class="bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-purple-500/30 rounded-xl p-4 mb-6"
+          id="ai-config-status">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">⚙️</span>
+              <div>
+                <div class="text-sm font-semibold text-white">AI 配置</div>
+                <div class="text-xs text-slate-400" id="ai-status-text">未配置 AI 服务</div>
+              </div>
+            </div>
+            <button
+              class="px-4 py-2 text-xs font-semibold rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition-all"
+              id="btn-config-ai">
+              配置 AI
+            </button>
+          </div>
+        </div>
+
+        <!-- 功能选项卡 -->
+        <div class="flex gap-2 mb-6 border-b border-slate-800">
+          <button class="ai-tab px-4 py-3 text-sm font-medium text-white border-b-2 border-purple-500"
+            data-tab="categorize">
+            📁 智能分类
+          </button>
+          <button class="ai-tab px-4 py-3 text-sm font-medium text-slate-400 hover:text-white transition-colors"
+            data-tab="rename">
+            ✏️ 智能重命名
+          </button>
+          <button class="ai-tab px-4 py-3 text-sm font-medium text-slate-400 hover:text-white transition-colors"
+            data-tab="analyze">
+            🔍 文件分析
+          </button>
+        </div>
+
+        <!-- 智能分类标签页 -->
+        <div class="ai-tab-content" id="tab-categorize">
+          <div class="grid grid-cols-1 gap-6">
+            <!-- 文件选择 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <h3 class="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                <span>📂</span> 选择要分类的文件
+              </h3>
+              <div class="flex gap-3 mb-4">
+                <button
+                  class="flex-1 px-4 py-3 text-sm font-medium rounded-lg border-2 border-dashed border-slate-800 text-slate-400 hover:border-purple-500 hover:text-purple-400 transition-all"
+                  id="btn-select-folder-categorize">
+                  <div class="text-2xl mb-1">📁</div>
+                  选择文件夹
+                </button>
+                <button
+                  class="flex-1 px-4 py-3 text-sm font-medium rounded-lg border-2 border-dashed border-slate-800 text-slate-400 hover:border-purple-500 hover:text-purple-400 transition-all"
+                  id="btn-select-files-categorize">
+                  <div class="text-2xl mb-1">📄</div>
+                  选择文件
+                </button>
+              </div>
+              <div class="text-xs text-slate-500" id="categorize-file-count">未选择文件</div>
+            </div>
+
+            <!-- 分类结果 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 hidden" id="categorize-results">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                  <span>🎯</span> AI 分类建议
+                </h3>
+                <button
+                  class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition-all"
+                  id="btn-apply-categorize">
+                  ✅ 应用分类
+                </button>
+              </div>
+
+              <!-- 对比视图 -->
+              <div class="grid grid-cols-2 gap-4 mb-4">
+                <!-- 左侧：原文件 -->
+                <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800/50">
+                  <div class="text-xs font-semibold text-slate-400 mb-2">📂 原始文件列表</div>
+                  <div id="original-file-list"
+                    class="font-mono text-sm text-slate-300 space-y-1 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    <!-- Filled by JS -->
+                  </div>
+                </div>
+
+                <!-- 右侧：AI 结果 -->
+                <div class="bg-slate-950/50 rounded-lg p-3 border border-purple-500/20 relative">
+                  <div
+                    class="absolute -top-2 -right-2 bg-purple-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg">
+                    AI PREVIEW</div>
+                  <div class="text-xs font-semibold text-purple-400 mb-2">✨ AI 归类预览</div>
+                  <div id="categorize-list"
+                    class="font-mono text-sm text-slate-300 space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    <!-- Filled by JS -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- 对话微调 -->
+              <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                <div class="flex gap-2">
+                  <input type="text" id="ai-adjust-input"
+                    class="flex-1 bg-slate-900/50 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors"
+                    placeholder="对结果不满意？输入指令调整（例如：'把图片单独分一个文件夹'）...">
+                  <button id="btn-adjust-categorize"
+                    class="px-4 py-2 bg-slate-700 text-white rounded hover:bg-slate-600 transition-colors text-sm font-medium">
+                    🤖 调整
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex gap-3">
+              <button
+                class="flex-1 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                id="btn-start-categorize" disabled>
+                🚀 开始智能分类
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 智能重命名标签页 -->
+        <div class="ai-tab-content hidden" id="tab-rename">
+          <div class="grid grid-cols-1 gap-6">
+            <!-- 文件选择 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <h3 class="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                <span>📂</span> 选择要重命名的文件
+              </h3>
+              <div class="flex gap-3 mb-4">
+                <button
+                  class="flex-1 px-4 py-3 text-sm font-medium rounded-lg border-2 border-dashed border-slate-800 text-slate-400 hover:border-purple-500 hover:text-purple-400 transition-all"
+                  id="btn-select-files-rename">
+                  <div class="text-2xl mb-1">📄</div>
+                  选择文件
+                </button>
+              </div>
+              <div class="text-xs text-slate-500" id="rename-file-count">未选择文件</div>
+            </div>
+
+            <!-- 重命名建议 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 hidden" id="rename-results">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-sm font-semibold text-white flex items-center gap-2">
+                  <span>✏️</span> AI 重命名建议
+                </h3>
+                <button
+                  class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-500 text-white hover:bg-purple-600 transition-all"
+                  id="btn-apply-rename">
+                  ✅ 应用重命名
+                </button>
+              </div>
+              <div id="rename-list" class="space-y-2 max-h-96 overflow-y-auto"></div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="flex gap-3">
+              <button
+                class="flex-1 px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                id="btn-start-rename" disabled>
+                🚀 生成重命名建议
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 文件分析标签页 -->
+        <div class="ai-tab-content hidden" id="tab-analyze">
+          <div class="grid grid-cols-1 gap-6">
+            <!-- 文件选择 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <h3 class="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                <span>📂</span> 选择要分析的文件
+              </h3>
+              <button
+                class="w-full px-4 py-3 text-sm font-medium rounded-lg border-2 border-dashed border-slate-800 text-slate-400 hover:border-purple-500 hover:text-purple-400 transition-all"
+                id="btn-select-file-analyze">
+                <div class="text-2xl mb-1">📄</div>
+                选择单个文件
+              </button>
+            </div>
+
+            <!-- 分析结果 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 hidden" id="analyze-results">
+              <h3 class="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                <span>🔍</span> 文件分析结果
+              </h3>
+              <div id="analyze-content" class="space-y-3"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 进度显示 -->
+        <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5 hidden" id="ai-progress">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-8 h-8 border-3 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+            <div>
+              <div class="text-sm font-semibold text-white" id="ai-progress-text">处理中...</div>
+              <div class="text-xs text-slate-500" id="ai-progress-detail">0 / 0</div>
+            </div>
+          </div>
+          <div class="h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div class="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all"
+              id="ai-progress-bar" style="width: 0%"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 设置页面 -->
+      <section class="page hidden" id="page-settings">
+        <div class="mb-6">
+          <h1 class="flex items-center gap-3 text-2xl font-bold text-white mb-2">⚙️ 设置</h1>
+          <p class="text-slate-400 text-sm">自定义应用配置</p>
+        </div>
+
+        <!-- 应用设置 - 2列布局 -->
+        <div class="mb-8">
+          <h2 class="text-lg font-semibold text-white mb-4">应用设置</h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <!-- 设置项 1 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <div class="flex items-center justify-between">
+                <div class="flex-1 mr-3">
+                  <div class="text-sm font-semibold text-white">清理前确认</div>
+                  <div class="text-xs text-slate-500">执行清理操作前显示确认对话框</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input type="checkbox" class="sr-only peer" id="setting-confirm-clean" checked>
+                  <div
+                    class="w-11 h-6 bg-slate-700 peer-checked:bg-blue-500 rounded-full peer-focus:ring-2 peer-focus:ring-blue-500/20 transition-all after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full">
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- 设置项 2 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <div class="flex items-center justify-between">
+                <div class="flex-1 mr-3">
+                  <div class="text-sm font-semibold text-white">清理后显示报告</div>
+                  <div class="text-xs text-slate-500">清理完成后显示详细结果</div>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                  <input type="checkbox" class="sr-only peer" id="setting-show-report" checked>
+                  <div
+                    class="w-11 h-6 bg-slate-700 peer-checked:bg-blue-500 rounded-full peer-focus:ring-2 peer-focus:ring-blue-500/20 transition-all after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full">
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- 设置项 3 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <div class="flex items-center justify-between">
+                <div class="flex-1 mr-3">
+                  <div class="text-sm font-semibold text-white">历史记录保留天数</div>
+                  <div class="text-xs text-slate-500">超过此天数的记录将自动删除</div>
+                </div>
+                <select
+                  class="px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200 flex-shrink-0"
+                  id="setting-history-days">
+                  <option value="7">7 天</option>
+                  <option value="30" selected>30 天</option>
+                  <option value="90">90 天</option>
+                  <option value="365">1 年</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 设置项 4 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <div class="flex items-center justify-between">
+                <div class="flex-1 mr-3">
+                  <div class="text-sm font-semibold text-white">默认扫描磁盘</div>
+                  <div class="text-xs text-slate-500">大文件扫描的默认目标磁盘</div>
+                </div>
+                <select
+                  class="px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200 flex-shrink-0"
+                  id="setting-default-drive">
+                  <option value="C:">C:</option>
+                  <option value="D:">D:</option>
+                  <option value="E:">E:</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 设置项 5 -->
+            <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-5">
+              <div class="flex items-center justify-between">
+                <div class="flex-1 mr-3">
+                  <div class="text-sm font-semibold text-white">默认最小文件大小</div>
+                  <div class="text-xs text-slate-500">大文件扫描的最小阈值</div>
+                </div>
+                <select
+                  class="px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200 flex-shrink-0"
+                  id="setting-min-size">
+                  <option value="50">50 MB</option>
+                  <option value="100" selected>100 MB</option>
+                  <option value="200">200 MB</option>
+                  <option value="500">500 MB</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 保存按钮 -->
+          <button
+            class="px-6 py-3 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/25 hover:-translate-y-0.5 transition-all"
+            id="btn-save-settings">💾 保存设置</button>
+        </div>
+
+        <!-- 支持作者 - 下方区域 -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- 打赏功能 -->
+          <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-6">
+            <div class="text-center mb-4">
+              <div class="text-xl mb-2">☕</div>
+              <h3 class="text-base font-semibold text-white mb-2">请作者喝杯咖啡</h3>
+              <p class="text-xs text-slate-400">如果这个工具对您有帮助，欢迎打赏支持</p>
+            </div>
+
+            <!-- 支付方式选择 -->
+            <div class="flex gap-2 mb-4">
+              <button
+                class="flex-1 px-4 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-blue-500/10 hover:border-blue-500 hover:text-blue-400 transition-all"
+                id="btn-show-alipay">
+                <div class="flex items-center justify-center gap-2">
+                  <span>💳</span>
+                  <span>支付宝</span>
+                </div>
+              </button>
+              <button
+                class="flex-1 px-4 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-green-500/10 hover:border-green-500 hover:text-green-400 transition-all"
+                id="btn-show-wechat">
+                <div class="flex items-center justify-center gap-2">
+                  <span>💚</span>
+                  <span>微信支付</span>
+                </div>
+              </button>
+            </div>
+
+            <!-- 二维码显示区域 -->
+            <div class="bg-slate-800/50 rounded-lg p-4 min-h-[280px] flex items-center justify-center"
+              id="qrcode-container">
+              <div class="text-center text-slate-500">
+                <div class="text-4xl mb-3">📱</div>
+                <p class="text-sm">点击上方按钮显示二维码</p>
+              </div>
+            </div>
+
+            <div class="mt-4 text-center text-xs text-slate-500">
+              感谢您的支持！您的鼓励是我持续开发的动力 ❤️
+            </div>
+          </div>
+
+          <!-- 关于信息 -->
+          <div class="bg-slate-900/80 border border-slate-800/50 rounded-xl p-6">
+            <h3 class="text-base font-semibold text-white mb-3">关于应用</h3>
+            <div class="space-y-2 text-sm text-slate-400">
+              <div class="flex justify-between">
+                <span>版本号</span>
+                <span class="text-white">v1.0.0</span>
+              </div>
+              <div class="flex justify-between">
+                <span>开发者</span>
+                <span class="text-white">Smart File Organizer Team</span>
+              </div>
+              <div class="flex justify-between">
+                <span>许可证</span>
+                <span class="text-white">MIT License</span>
+              </div>
+              <div class="flex justify-between">
+                <span>平台支持</span>
+                <span class="text-white">Windows / macOS</span>
+              </div>
+            </div>
+          </div>
+        </div>
+  </div>
+  </section>
+  </main>
+  </div>
+
+  <!-- Toast 通知 -->
+  <div class="fixed bottom-6 right-6 flex flex-col gap-3" id="toast-container" style="z-index: 10001;"></div>
+
+  <!-- 确认对话框 -->
+  <div class="fixed inset-0 bg-black/70 backdrop-blur flex items-center justify-center z-50 hidden" id="confirm-modal">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-[90%] max-w-md overflow-hidden animate-fade-in">
+      <div class="flex items-center gap-3 px-5 py-4 border-b border-slate-800">
+        <span class="text-2xl">⚠️</span>
+        <h3 class="text-base font-semibold text-white">确认操作</h3>
+      </div>
+      <div class="px-5 py-5 text-sm text-slate-300 leading-relaxed whitespace-pre-line" id="modal-message">确定要执行此操作吗？
+      </div>
+      <div class="flex justify-end gap-3 px-5 py-4 bg-slate-800/50">
+        <button
+          class="px-4 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-700 transition-all"
+          id="modal-cancel">取消</button>
+        <button
+          class="px-4 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg hover:shadow-red-500/30 transition-all"
+          id="modal-confirm">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI 配置对话框 -->
+  <div class="fixed inset-0 bg-black/70 backdrop-blur flex items-center justify-center hidden" id="ai-config-modal"
+    style="z-index: 9999;">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl w-[90%] max-w-2xl overflow-hidden animate-fade-in"
+      style="z-index: 10000;">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">🤖</span>
+          <h3 class="text-base font-semibold text-white">AI 配置</h3>
+        </div>
+        <button class="text-slate-400 hover:text-white transition-colors" id="ai-config-close">✕</button>
+      </div>
+      <div class="px-5 py-5 max-h-[70vh] overflow-y-auto">
+        <!-- AI 供应商选择 -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-300 mb-2">AI 供应商</label>
+          <select class="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+            id="ai-provider-select">
+            <option value="">请选择...</option>
+          </select>
+        </div>
+
+        <!-- API 地址 -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-300 mb-2">
+            API 地址
+            <span class="text-xs text-slate-500 ml-2">(本地服务可修改端口)</span>
+          </label>
+          <input type="text"
+            class="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+            id="ai-base-url" placeholder="自动填充，可修改">
+        </div>
+
+        <!-- API 密钥 -->
+        <div class="mb-4" id="api-key-container">
+          <label class="block text-sm font-medium text-slate-300 mb-2">
+            API 密钥
+            <span class="text-xs text-slate-500 ml-2" id="api-key-hint">(必填)</span>
+          </label>
+          <input type="password"
+            class="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+            id="ai-api-key" placeholder="输入 API 密钥">
+        </div>
+
+        <!-- 获取模型列表 -->
+        <div class="mb-4">
+          <button
+            class="w-full px-4 py-2 text-sm font-semibold rounded-lg border border-blue-500 text-blue-400 hover:bg-blue-500/10 transition-all"
+            id="btn-fetch-models">
+            🔄 获取可用模型
+          </button>
+        </div>
+
+        <!-- 模型选择 -->
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-slate-300 mb-2">选择模型</label>
+          <select class="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-800 rounded-lg text-slate-200"
+            id="ai-model-select">
+            <option value="">请先获取模型列表...</option>
+          </select>
+        </div>
+
+        <!-- 测试连接 -->
+        <div class="mb-4">
+          <button
+            class="w-full px-4 py-2 text-sm font-semibold rounded-lg border border-blue-500 text-blue-400 hover:bg-blue-500/10 transition-all"
+            id="btn-test-connection">
+            🔌 测试连接
+          </button>
+          <div class="mt-2 text-xs text-slate-500 hidden" id="test-result"></div>
+        </div>
+      </div>
+      <div class="flex justify-end gap-3 px-5 py-4 bg-slate-800/50 border-t border-slate-800">
+        <button
+          class="px-4 py-2 text-sm font-semibold rounded-lg border border-slate-700 text-slate-400 hover:bg-slate-700 transition-all"
+          id="ai-config-cancel">取消</button>
+        <button
+          class="px-4 py-2 text-sm font-semibold rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg hover:shadow-blue-500/30 transition-all"
+          id="ai-config-save">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 引入图标库 -->
+  <script src="icons.js"></script>
+  <script src="renderer.js"></script>
+</body>
+
+</html>
