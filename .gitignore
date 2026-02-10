@@ -3,3 +3,5 @@
 .gemini
 node_modules
 dist
+.DS_Store
+test.txt
