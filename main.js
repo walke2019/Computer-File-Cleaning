@@ -8,6 +8,8 @@ const { AdvancedCleanerService } = require('./src/services/advancedCleaner');
 const { AIAnalysisService } = require('./src/services/aiAnalysis');
 const { AIChatService } = require('./src/services/aiChat');
 const { AIFileAssistantService } = require('./src/services/aiFileAssistant');
+const { UninstallerService } = require('./src/services/uninstaller');
+const { DevCleanerService } = require('./src/services/devCleaner');
 
 let mainWindow;
 
@@ -73,7 +75,10 @@ const settingsService = new SettingsService();
 const advancedCleanerService = new AdvancedCleanerService();
 const aiAnalysisService = new AIAnalysisService();
 const aiChatService = new AIChatService();
+aiChatService.setPlatform(process.platform);
 const aiFileAssistant = new AIFileAssistantService(aiChatService);
+const uninstallerService = new UninstallerService(fileScannerService.platform);
+const devCleanerService = new DevCleanerService(fileScannerService.platform);
 
 // ==================== 设置 API ====================
 
@@ -97,6 +102,49 @@ ipcMain.handle('get-exclude-paths', async () => {
 ipcMain.handle('add-exclude-path', async (event, pathToExclude) => {
     const result = settingsService.addExcludePath(pathToExclude);
     return { success: result };
+});
+
+// ==================== 卸载服务 API ====================
+ipcMain.handle('get-installed-apps', async () => {
+    try {
+        const apps = await uninstallerService.getInstalledApps();
+        return { success: true, data: apps };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('find-app-related-files', async (event, appPath, bundleId) => {
+    try {
+        const files = await uninstallerService.findRelatedFiles(appPath, bundleId);
+        return { success: true, data: files };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+ipcMain.handle('uninstall-app', async (event, appPath, relatedFiles) => {
+    try {
+        const result = await uninstallerService.uninstall(appPath, relatedFiles, (path) => shell.trashItem(path));
+        return { success: true, data: result };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// ==================== 视觉化 API ====================
+ipcMain.handle('get-folder-treemap', async (event, targetPath, maxDepth) => {
+    try {
+        const treemap = await fileScannerService.getFolderTreeMap(targetPath, maxDepth);
+        return { success: true, data: treemap };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+});
+
+// ==================== 开发者清理 API ====================
+ipcMain.handle('get-dev-cleaner-info', async () => {
+    return { success: true, data: devCleanerService.getDevTools() };
 });
 
 // 移除白名单路径
@@ -558,10 +606,12 @@ ipcMain.handle('fetch-ai-models', async (event, provider, apiKey, baseUrl) => {
     }
 });
 
-// 发送 AI 消息
+// 发送 AI 消息 (流式)
 ipcMain.handle('send-ai-message', async (event, message, history) => {
     try {
-        const response = await aiChatService.sendMessage(message, history);
+        const response = await aiChatService.sendMessageStream(message, history, (chunk) => {
+            event.sender.send('ai-chat-chunk', { chunk });
+        });
         return { success: true, data: response };
     } catch (error) {
         return { success: false, error: error.message };

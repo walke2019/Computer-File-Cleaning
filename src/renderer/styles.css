@@ -62,11 +62,11 @@
 
 /* 亮色主题 */
 [data-theme="light"] {
-  /* 主色调保持不变 */
+  /* 主色调 - 亮色模式下稍微加深以保证对比度 */
   --primary: #2563eb;
   --primary-light: #3b82f6;
   --primary-dark: #1d4ed8;
-  --primary-glow: rgba(37, 99, 235, 0.2);
+  --primary-glow: rgba(37, 99, 235, 0.15);
 
   --secondary: #0891b2;
   --secondary-light: #06b6d4;
@@ -82,26 +82,26 @@
   --info: #0891b2;
 
   /* 背景色 - 亮色 */
-  --bg-primary: #f8fafc;
-  --bg-secondary: #f1f5f9;
-  --bg-tertiary: #e2e8f0;
-  --bg-card: rgba(255, 255, 255, 0.9);
-  --bg-hover: rgba(37, 99, 235, 0.08);
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-hover: rgba(37, 99, 235, 0.06);
 
-  /* 文字色 - 亮色 */
+  /* 文字色 - 亮色 (保证对比度) */
   --text-primary: #0f172a;
-  --text-secondary: #475569;
+  --text-secondary: #334155;
   --text-muted: #64748b;
 
   /* 边框色 - 亮色 */
-  --border-color: rgba(148, 163, 184, 0.2);
-  --border-light: rgba(148, 163, 184, 0.3);
+  --border-color: #e2e8f0;
+  --border-light: #f1f5f9;
 
   /* 阴影 - 亮色 */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.15);
-  --shadow-glow: 0 0 20px var(--primary-glow);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 15px rgba(37, 99, 235, 0.15);
 }
 
 /* ========================================
@@ -165,28 +165,39 @@
 
 /* 边框色覆盖 */
 [data-theme="light"] .border-slate-800 {
-  border-color: #cbd5e1 !important;
+  border-color: #e2e8f0 !important;
 }
 
 [data-theme="light"] .border-slate-800\/50 {
-  border-color: rgba(203, 213, 225, 0.5) !important;
+  border-color: #f1f5f9 !important;
 }
 
 [data-theme="light"] .border-slate-700 {
-  border-color: #94a3b8 !important;
+  border-color: #cbd5e1 !important;
 }
 
 [data-theme="light"] .border-slate-700\/50 {
-  border-color: rgba(148, 163, 184, 0.5) !important;
+  border-color: #f1f5f9 !important;
 }
 
 /* 侧边导航栏和主内容区域 */
-[data-theme="light"] nav {
-  background-color: #f1f5f9 !important;
+[data-theme="light"] nav,
+[data-theme="light"] .sidebar {
+  background-color: #f8fafc !important;
+  border-right-color: #e2e8f0 !important;
 }
 
 [data-theme="light"] main {
-  background-color: #f8fafc !important;
+  background-color: #ffffff !important;
+}
+
+[data-theme="light"] .nav-item:hover {
+  background-color: #f1f5f9 !important;
+  color: #2563eb !important;
+}
+
+[data-theme="light"] .nav-title {
+  color: #94a3b8 !important;
 }
 
 /* 标题栏 */
@@ -209,19 +220,48 @@
   background-color: #cbd5e1 !important;
 }
 
-/* 输入框 */
-[data-theme="light"] input,
-[data-theme="light"] select,
-[data-theme="light"] textarea {
-  background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
-  color: #1e293b !important;
+/* AI 聊天特定覆盖 */
+[data-theme="light"] .bg-slate-900\/50 {
+  background-color: #f1f5f9 !important;
+}
+
+[data-theme="light"] .bg-slate-950\/50 {
+  background-color: #f8fafc !important;
+}
+
+[data-theme="light"] .bg-purple-900\/20 {
+  background-color: #f5f3ff !important;
+}
+
+[data-theme="light"] .bg-pink-900\/20 {
+  background-color: #fdf2f8 !important;
+}
+
+/* 渐变文本对比度增强 */
+[data-theme="light"] .text-gradient-blue {
+  background: linear-gradient(135deg, #2563eb, #0891b2) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+}
+
+[data-theme="light"] .text-gradient-warm {
+  background: linear-gradient(135deg, #d97706, #ea580c) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+}
+
+/* 状态标签 */
+[data-theme="light"] .bg-slate-700 {
+  background-color: #e2e8f0 !important;
+  color: #475569 !important;
 }
 
 /* 卡片和容器阴影 */
 [data-theme="light"] .rounded-xl,
 [data-theme="light"] .rounded-lg {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+  background-color: #ffffff !important;
+  border-color: #f1f5f9 !important;
 }
 
 /* ========================================

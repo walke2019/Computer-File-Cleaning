@@ -11,6 +11,7 @@ class SettingsService {
         this.configFile = path.join(this.configDir, 'settings.json');
         this.historyFile = path.join(this.configDir, 'history.json');
 
+        const isMac = os.platform() === 'darwin';
         this.defaultSettings = {
             // 白名单 - 排除的路径
             excludePaths: [],
@@ -19,7 +20,7 @@ class SettingsService {
             // 大文件扫描默认最小大小 (MB)
             defaultMinFileSize: 100,
             // 大文件扫描默认驱动器
-            defaultDrive: 'C:',
+            defaultDrive: isMac ? '/' : 'C:',
             // 清理前确认
             confirmBeforeClean: true,
             // 清理后显示报告
@@ -287,7 +288,8 @@ class SettingsService {
         const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
         if (format === 'txt') {
-            let report = `Windows 清理大师 - 清理报告\n`;
+            const appName = os.platform() === 'darwin' ? '智能文件整理助手' : 'Windows 清理大师';
+            let report = `${appName} - 清理报告\n`;
             report += `生成时间: ${now.toLocaleString()}\n`;
             report += `${'='.repeat(50)}\n\n`;
 

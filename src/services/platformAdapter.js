@@ -170,7 +170,8 @@ class PlatformAdapter {
                 '/private/var/vm',
                 '/.Spotlight-V100',
                 '/.fseventsd',
-                '/.Trashes'
+                '/.Trashes',
+                '/Volumes'
             ];
         }
         return ['/sys', '/proc', '/dev'];
@@ -184,8 +185,32 @@ class PlatformAdapter {
             // Windows: C:, D:, E:, etc.
             return ['C:', 'D:', 'E:', 'F:', 'G:', 'H:'];
         } else if (this.isMac) {
-            // macOS: 只有根目录和挂载的卷
-            return ['/'];
+            // macOS: 获取所有本地挂载点，过滤网络磁盘
+            try {
+                const { execSync } = require('child_process');
+                // -l flag for local filesystems only
+                const output = execSync('df -l').toString();
+                const lines = output.split('\n');
+                const drives = new Set(['/']);
+
+                for (let i = 1; i < lines.length; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    // df output format usually: Filesystem 512-blocks Used Available Capacity iused ifree %iused Mounted on
+                    // We need the last column
+                    const parts = line.split(/\s+/);
+                    const mountPoint = parts[parts.length - 1];
+
+                    if (mountPoint && mountPoint.startsWith('/Volumes/')) {
+                        drives.add(mountPoint);
+                    }
+                }
+                return Array.from(drives);
+            } catch (e) {
+                console.error('获取磁盘列表失败:', e);
+                return ['/'];
+            }
         }
         return ['/'];
     }

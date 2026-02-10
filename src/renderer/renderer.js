@@ -17,12 +17,21 @@ const state = {
     diskInfo: null,
     systemInfo: null,
     viewMode: 'category', // 'category' or 'files'
+    platform: '',
     // AI 助手状态
     aiConfig: null,
+    aiProviders: [],
     aiSelectedFiles: [],
     aiCategorizeResult: null,
     aiRenameResult: null,
-    currentAITab: 'categorize'
+    currentAITab: 'categorize',
+    // 卸载器状态
+    installedApps: [],
+    selectedApp: null,
+    appRelatedFiles: [],
+    selectedRelatedFiles: new Set(),
+    // 可视化状态
+    treemapData: null
 };
 
 const elements = {};
@@ -163,6 +172,15 @@ function initEventListeners() {
     });
     document.getElementById('btn-add-whitelist')?.addEventListener('click', addWhitelistPath);
     document.getElementById('btn-save-settings')?.addEventListener('click', saveSettings);
+    // 应用卸载器
+    document.getElementById('btn-refresh-apps')?.addEventListener('click', scanInstalledApps);
+    document.getElementById('btn-do-uninstall')?.addEventListener('click', performUninstall);
+    // 可视化
+    document.getElementById('btn-visualize-browse')?.addEventListener('click', async () => {
+        const r = await window.electronAPI.selectFolder();
+        if (r.success) document.getElementById('visualizer-path').value = r.path;
+    });
+    document.getElementById('btn-start-visualize')?.addEventListener('click', startVisualizer);
     // 打赏二维码
     document.getElementById('btn-show-alipay')?.addEventListener('click', () => showQRCode('alipay'));
     document.getElementById('btn-show-wechat')?.addEventListener('click', () => showQRCode('wechat'));
@@ -201,6 +219,8 @@ function switchPage(pageId) {
         'duplicates',
         'disk-info',
         'ai-assistant',
+        'uninstaller',
+        'visualizer',
         'history',
         'whitelist',
         'settings'
@@ -230,12 +250,245 @@ function switchPage(pageId) {
             console.warn(`[页面] 未找到页面元素: page-${id}`);
         }
     });
-    if (pageId === 'junk-cleaner') loadSystemInfo();
+    if (pageId === 'junk-cleaner') {
+        loadSystemInfo();
+        loadDevCleanerData();
+    }
     if (pageId === 'disk-info' && !state.diskInfo) loadDiskInfo();
-    // if (pageId === 'system-info' && !state.systemInfo) loadSystemInfo();
     if (pageId === 'history') loadHistory();
     if (pageId === 'whitelist') loadWhitelist();
     if (pageId === 'settings') loadSettingsUI();
+    if (pageId === 'uninstaller') scanInstalledApps();
+}
+
+// --- 应用卸载逻辑 ---
+async function scanInstalledApps() {
+    const btn = document.getElementById('btn-refresh-apps');
+    const container = document.getElementById('app-list-container');
+    if (state.isScanning) return;
+
+    state.isScanning = true;
+    btn.disabled = true;
+    container.innerHTML = '<div class="p-12 text-center"><div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div><span class="text-sm text-slate-400">正在检索已安装的应用...</span></div>';
+
+    try {
+        const r = await window.electronAPI.getInstalledApps();
+        if (r.success) {
+            const apps = r.data || [];
+            state.installedApps = apps;
+            renderAppList(apps);
+            showToast('success', `找到 ${apps.length} 个应用`);
+        } else {
+            showToast('error', '获取应用列表失败');
+        }
+    } catch (e) {
+        showToast('error', '扫描出错');
+    } finally {
+        state.isScanning = false;
+        btn.disabled = false;
+    }
+}
+
+function renderAppList(apps) {
+    const container = document.getElementById('app-list-container');
+    if (apps.length === 0) {
+        container.innerHTML = '<div class="p-8 text-center text-slate-500">未发现可卸载的应用</div>';
+        return;
+    }
+
+    container.innerHTML = apps.map(app => `
+        <div class="app-item flex items-center gap-3 px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors" data-path="${app.path.replace(/"/g, '&quot;')}">
+            <div class="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-xl overflow-hidden">
+                ${app.icon ? `<img src="${app.icon}" class="w-full h-full object-contain" />` : '📦'}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-semibold text-white truncate">${app.name}</div>
+                <div class="text-[10px] text-slate-500 truncate">${app.path}</div>
+            </div>
+        </div>
+    `).join('');
+
+    container.querySelectorAll('.app-item').forEach(el => {
+        el.addEventListener('click', () => selectAppForUninstall(el.dataset.path, el));
+    });
+}
+
+async function selectAppForUninstall(appPath, el) {
+    // UI 反馈
+    document.querySelectorAll('.app-item').forEach(item => item.classList.remove('bg-blue-600/20', 'border-blue-500/50'));
+    el.classList.add('bg-blue-600/20', 'border-blue-500/50');
+
+    const fileContainer = document.getElementById('app-related-files');
+    const actionsTray = document.getElementById('uninstall-actions');
+
+    fileContainer.innerHTML = '<div class="p-12 text-center"><div class="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div><span class="text-xs text-slate-500">正在搜索关联文件...</span></div>';
+    actionsTray.classList.add('hidden');
+
+    try {
+        const app = state.installedApps.find(a => a.path === appPath);
+        const r = await window.electronAPI.findAppRelatedFiles(appPath, app?.bundleId);
+        if (r.success) {
+            state.selectedApp = app;
+            state.appRelatedFiles = r.data || [];
+            state.selectedRelatedFiles = new Set(state.appRelatedFiles.map(f => f.path));
+            renderRelatedFiles(state.appRelatedFiles);
+            actionsTray.classList.remove('hidden');
+            updateUninstallSummary();
+        }
+    } catch (e) {
+        showToast('error', '搜索关联文件失败');
+    }
+}
+
+function renderRelatedFiles(files) {
+    const container = document.getElementById('app-related-files');
+    if (files.length === 0) {
+        container.innerHTML = '<div class="p-8 text-center text-slate-500 text-xs">未找到额外关联文件</div>';
+        return;
+    }
+
+    container.innerHTML = files.map(file => `
+        <div class="file-item flex items-center gap-3 px-4 py-2 hover:bg-slate-800/50 cursor-pointer" data-path="${file.path.replace(/"/g, '&quot;')}">
+            <div class="w-4 h-4 border border-slate-600 rounded flex items-center justify-center flex-shrink-0 checkbox bg-blue-500 border-blue-500">
+                <span class="text-white text-[10px]">✓</span>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-[11px] text-slate-300 truncate">${file.name}</div>
+                <div class="text-[9px] text-slate-500 truncate">${file.type}</div>
+            </div>
+            <div class="text-[10px] text-amber-500 font-mono">${formatSize(file.size)}</div>
+        </div>
+    `).join('');
+
+    container.querySelectorAll('.file-item').forEach(el => {
+        el.addEventListener('click', () => {
+            const path = el.dataset.path;
+            const cb = el.querySelector('.checkbox');
+            if (state.selectedRelatedFiles.has(path)) {
+                state.selectedRelatedFiles.delete(path);
+                cb.classList.remove('bg-blue-500', 'border-blue-500');
+                cb.innerHTML = '';
+            } else {
+                state.selectedRelatedFiles.add(path);
+                cb.classList.add('bg-blue-500', 'border-blue-500');
+                cb.innerHTML = '<span class="text-white text-[10px]">✓</span>';
+            }
+            updateUninstallSummary();
+        });
+    });
+}
+
+function updateUninstallSummary() {
+    let total = 0;
+    state.appRelatedFiles.forEach(f => {
+        if (state.selectedRelatedFiles.has(f.path)) total += f.size;
+    });
+    document.getElementById('uninstall-freed-size').textContent = formatSize(total);
+}
+
+async function performUninstall() {
+    if (!state.selectedApp) return;
+
+    // 转换为服务需要的对象格式
+    const selectedFiles = state.appRelatedFiles.filter(f => state.selectedRelatedFiles.has(f.path));
+
+    const confirmed = await showConfirmDialog(`确定要卸载 "${state.selectedApp.name}" 及其选中的关联文件吗？\n此操作不可撤销。`);
+    if (!confirmed) return;
+
+    const btn = document.getElementById('btn-do-uninstall');
+    btn.disabled = true;
+    btn.textContent = '正在卸载...';
+
+    try {
+        const r = await window.electronAPI.uninstallApp(state.selectedApp.path, selectedFiles);
+        if (r.success) {
+            showToast('success', '应用已彻底卸载');
+            // 重置 UI
+            document.getElementById('app-related-files').innerHTML = '<div class="p-8 text-center text-slate-500 text-sm">选择应用以查看关联文件</div>';
+            document.getElementById('uninstall-actions').classList.add('hidden');
+            state.selectedApp = null;
+            scanInstalledApps(); // 刷新列表
+        } else {
+            showToast('error', r.error || '卸载失败');
+        }
+    } catch (e) {
+        showToast('error', '操作出错');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🚀 彻底卸载并清理';
+    }
+}
+
+// --- 磁盘大地图逻辑 ---
+async function startVisualizer() {
+    const path = document.getElementById('visualizer-path').value;
+    const loading = document.getElementById('visualizer-loading');
+
+    loading.classList.remove('hidden');
+    try {
+        const r = await window.electronAPI.getFolderTreeMap(path);
+        if (r.success) {
+            renderTreeMap(r.data);
+        } else {
+            showToast('error', '分析目录失败');
+        }
+    } catch (e) {
+        showToast('error', '可视化渲染出错');
+    } finally {
+        loading.classList.add('hidden');
+    }
+}
+
+function renderTreeMap(data) {
+    const canvas = document.getElementById('treemap-canvas');
+    canvas.innerHTML = ''; // 清空
+
+    if (!data || !data.children || data.children.length === 0) {
+        canvas.innerHTML = '<div class="flex items-center justify-center h-full text-slate-500">文件夹为空或无法访问</div>';
+        return;
+    }
+
+    // 绘制 Treemap (简单 HTML 实现)
+    const container = document.createElement('div');
+    container.className = 'flex w-full h-full gap-1 p-1';
+
+    // 按大小排序
+    const children = [...data.children].sort((a, b) => b.size - a.size);
+    const total = data.size;
+
+    // 简单的 Flexbox 分块布局 (递归更好，这里做一层演示)
+    children.forEach(item => {
+        const ratio = (item.size / total) * 100;
+        if (ratio < 1) return; // 忽略太小的
+
+        const block = document.createElement('div');
+        block.className = 'relative group rounded overflow-hidden flex flex-col items-center justify-center transition-all hover:scale-[1.01] hover:z-10 cursor-pointer shadow-sm';
+        block.style.width = `${ratio}%`;
+        block.style.backgroundColor = getFolderColor(item.name);
+
+        block.innerHTML = `
+            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+            <div class="text-[10px] font-bold text-white px-1 truncate w-full text-center">${item.name}</div>
+            <div class="text-[9px] text-white/70">${formatSize(item.size)}</div>
+            <div class="hidden group-hover:block absolute bottom-1 right-1 bg-black/50 text-[8px] text-white px-1 rounded">${Math.round(ratio)}%</div>
+        `;
+
+        block.onclick = () => {
+            document.getElementById('visualizer-path').value = item.path;
+            startVisualizer();
+        };
+
+        container.appendChild(block);
+    });
+
+    canvas.appendChild(container);
+}
+
+function getFolderColor(name) {
+    const colors = ['#3b82f6', '#06b6d4', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981'];
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return colors[Math.abs(hash) % colors.length];
 }
 
 function initWindowControls() {
@@ -882,27 +1135,27 @@ function renderAISuggestions(data) {
     };
 
     list.innerHTML = data.suggestions.map(s => `
-            < div class="flex items-start gap-3 p-3 border ${priorityColors[s.priority]} rounded-lg cursor-pointer hover:brightness-110 transition-all" onclick = "handleSuggestionClick('${s.action}', '${s.category || ''}', '${s.drive || ''}')" >
-      <span class="text-xl">${s.icon}</span>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center gap-2 mb-1">
-          <span class="text-sm font-semibold text-white">${s.title}</span>
-          ${priorityLabels[s.priority]}
+        <div class="flex items-start gap-3 p-3 border ${priorityColors[s.priority]} rounded-lg cursor-pointer hover:brightness-110 transition-all" onclick="handleSuggestionClick('${s.action}', '${s.category || ''}', '${s.drive || ''}')">
+            <span class="text-xl">${s.icon}</span>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="text-sm font-semibold text-white">${s.title}</span>
+                    ${priorityLabels[s.priority]}
+                </div>
+                <div class="text-xs text-slate-400">${s.description}</div>
+                ${s.savings > 0 ? `<div class="text-xs text-emerald-400 mt-1">💾 可释放 ${data.totalSavingsFormatted}</div>` : ''}
+            </div>
+            <span class="text-slate-500 text-xs">→</span>
         </div>
-        <div class="text-xs text-slate-400">${s.description}</div>
-        ${s.savings > 0 ? `<div class="text-xs text-emerald-400 mt-1">💾 可释放 ${data.totalSavingsFormatted}</div>` : ''}
-      </div>
-      <span class="text-slate-500 text-xs">→</span>
-    </div >
-            `).join('');
+    `).join('');
 
     // 添加总结
     if (data.totalSavings > 0) {
         list.innerHTML += `
-            < div class="mt-4 p-3 bg-gradient-to-r from-emerald-900/30 to-cyan-900/30 border border-emerald-500/30 rounded-lg text-center" >
+            <div class="mt-4 p-3 bg-gradient-to-r from-emerald-900/30 to-cyan-900/30 border border-emerald-500/30 rounded-lg text-center">
                 <div class="text-sm text-white">💡 执行以上建议可释放约 <strong class="text-emerald-400">${data.totalSavingsFormatted}</strong> 空间</div>
-      </div >
-            `;
+            </div>
+        `;
     }
 }
 
@@ -918,32 +1171,31 @@ function renderDiskPrediction(data) {
     const trendText = data.trend === 'increasing' ? '增长中' : '下降中';
 
     container.innerHTML = `
-            < div class="grid grid-cols-2 gap-4" >
-      <div class="bg-slate-800/50 rounded-lg p-3 text-center">
-        <div class="text-lg">${trendIcon}</div>
-        <div class="text-xs text-slate-400">趋势</div>
-        <div class="text-sm font-semibold text-white">${trendText}</div>
-      </div>
-      <div class="bg-slate-800/50 rounded-lg p-3 text-center">
-        <div class="text-lg">📊</div>
-        <div class="text-xs text-slate-400">日均增长</div>
-        <div class="text-sm font-semibold text-amber-400">${data.dailyGrowthFormatted || '0 B'}</div>
-      </div>
-    </div >
-            ${data.daysUntilFull ? `
-      <div class="mt-4 p-3 ${data.daysUntilFull < 30 ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-800/50'} rounded-lg">
-        <div class="flex items-center gap-2">
-          <span class="text-lg">${data.daysUntilFull < 30 ? '⚠️' : '🔮'}</span>
-          <div>
-            <div class="text-sm font-semibold text-white">预计磁盘空间耗尽时间</div>
-            <div class="text-xs ${data.daysUntilFull < 30 ? 'text-red-400' : 'text-slate-400'}">约 ${Math.round(data.daysUntilFull)} 天后</div>
-          </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                <div class="text-lg">${trendIcon}</div>
+                <div class="text-xs text-slate-400">趋势</div>
+                <div class="text-sm font-semibold text-white">${trendText}</div>
+            </div>
+            <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+                <div class="text-lg">📊</div>
+                <div class="text-xs text-slate-400">日均增长</div>
+                <div class="text-sm font-semibold text-amber-400">${data.dailyGrowthFormatted || '0 B'}</div>
+            </div>
         </div>
-      </div>
-    ` : ''
-        }
+        ${data.daysUntilFull ? `
+            <div class="mt-4 p-3 ${data.daysUntilFull < 30 ? 'bg-red-500/10 border border-red-500/30' : 'bg-slate-800/50'} rounded-lg">
+                <div class="flex items-center gap-2">
+                    <span class="text-lg">${data.daysUntilFull < 30 ? '⚠️' : '🔮'}</span>
+                    <div>
+                        <div class="text-sm font-semibold text-white">预计磁盘空间耗尽时间</div>
+                        <div class="text-xs ${data.daysUntilFull < 30 ? 'text-red-400' : 'text-slate-400'}">约 ${Math.round(data.daysUntilFull)} 天后</div>
+                    </div>
+                </div>
+            </div>
+        ` : ''}
         <div class="mt-3 text-[10px] text-slate-500 text-center">* 预测基于最近30天的使用趋势</div>
-        `;
+    `;
 }
 
 // 处理建议点击
@@ -968,34 +1220,15 @@ window.handleSuggestionClick = function (action, category, drive) {
 
 // ==================== AI 对话式清理助手 ====================
 
-const aiState = {
-    providers: [],
-    config: {},
+const aiChatState = {
     chatHistory: [],
-    isLoading: false
+    isLoading: false,
+    currentMessageId: null,
+    currentContent: ''
 };
 
-// 初始化 AI 配置
-async function initAIChat() {
-    // 获取供应商列表
-    const providersResult = await window.electronAPI.getAIProviders();
-    if (providersResult.success) {
-        aiState.providers = providersResult.data;
-    }
-
-    // 获取保存的配置
-    const configResult = await window.electronAPI.getAIConfig();
-    if (configResult.success && configResult.data) {
-        aiState.config = configResult.data;
-        applyAIConfig(configResult.data);
-    }
-
-    // 绑定事件
-    document.getElementById('ai-provider')?.addEventListener('change', onProviderChange);
-    document.getElementById('btn-save-ai-config')?.addEventListener('click', saveAIConfig);
-    document.getElementById('btn-test-ai-connection')?.addEventListener('click', testAIConnection);
-
-    // 绑定聊天事件
+// 绑定聊天事件
+function initChatEvents() {
     document.getElementById('btn-send-chat')?.addEventListener('click', sendAIChatMessage);
     document.getElementById('chat-input')?.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') sendAIChatMessage();
@@ -1007,180 +1240,116 @@ async function initAIChat() {
     document.getElementById('btn-close-chat-drawer')?.addEventListener('click', closeChatDrawer);
     document.getElementById('chat-drawer-overlay')?.addEventListener('click', closeChatDrawer);
 
-    // 初始化模型列表
-    onProviderChange();
-}
-
-// 供应商变更
-function onProviderChange() {
-    const providerKey = document.getElementById('ai-provider')?.value;
-    const provider = aiState.providers.find(p => p.key === providerKey);
-    const modelSelect = document.getElementById('ai-model');
-    const customModelContainer = document.getElementById('custom-model-container');
-
-    if (provider) {
-        // 更新模型列表
-        modelSelect.innerHTML = '<option value="">选择模型...</option>' +
-            provider.models.map(m => `< option value = "${m}" > ${m}</option > `).join('');
-
-        // 设置默认模型
-        if (provider.defaultModel) {
-            modelSelect.value = provider.defaultModel;
+    // 绑定流式响应事件
+    window.electronAPI.onAIChatChunk(({ chunk }) => {
+        if (aiChatState.currentMessageId) {
+            const messageEl = document.querySelector(`#${aiChatState.currentMessageId} .content-text`);
+            if (messageEl) {
+                aiChatState.currentContent += chunk;
+                messageEl.innerHTML = formatAIResponse(aiChatState.currentContent);
+                const messagesEl = document.getElementById('chat-history');
+                if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+            }
         }
+    });
+}
 
-        // 显示/隐藏自定义模型输入
-        if (providerKey === 'custom') {
-            customModelContainer?.classList.remove('hidden');
-        } else {
-            customModelContainer?.classList.add('hidden');
-        }
-
-        // 更新 API 地址占位符
-        const baseUrlInput = document.getElementById('ai-base-url');
-        if (baseUrlInput) {
-            baseUrlInput.placeholder = provider.baseUrl || '输入 API 地址';
-        }
+// 打开聊天抽屉
+function openChatDrawer() {
+    const drawer = document.getElementById('chat-drawer');
+    const overlay = document.getElementById('chat-drawer-overlay');
+    if (drawer && overlay) {
+        overlay.classList.remove('hidden');
+        drawer.classList.remove('translate-x-full');
+        // 延迟添加不透明度，确保过渡效果
+        setTimeout(() => overlay.classList.add('opacity-100'), 10);
     }
 }
 
-// 应用配置到 UI
-function applyAIConfig(config) {
-    // 安全地设置元素值
-    const setElementValue = (id, value) => {
-        const element = document.getElementById(id);
-        if (element && value) {
-            element.value = value;
-        }
-    };
-
-    if (config.provider) {
-        setElementValue('ai-provider', config.provider);
-        onProviderChange();
-    }
-    setElementValue('ai-base-url', config.baseUrl);
-    setElementValue('ai-api-key', config.apiKey);
-    setElementValue('ai-model', config.model);
-    setElementValue('ai-custom-model', config.customModels);
-
-    // 更新状态显示
-    updateAIStatus(config);
-}
-
-// 更新 AI 状态显示
-function updateAIStatus(config) {
-    const provider = aiState.providers.find(p => p.key === config?.provider);
-    document.getElementById('ai-provider-status').textContent = provider?.name || '未配置';
-    document.getElementById('ai-model-status').textContent = config?.model || config?.customModels || '请选择模型';
-}
-
-// 保存 AI 配置
-async function saveAIConfig() {
-    const config = {
-        provider: document.getElementById('ai-provider')?.value,
-        baseUrl: document.getElementById('ai-base-url')?.value,
-        apiKey: document.getElementById('ai-api-key')?.value,
-        model: document.getElementById('ai-model')?.value,
-        customModels: document.getElementById('ai-custom-model')?.value
-    };
-
-    if (!config.apiKey) {
-        showToast('warning', '请输入 API 密钥');
-        return;
-    }
-
-    const result = await window.electronAPI.saveAIConfig(config);
-    if (result.success) {
-        aiState.config = config;
-        updateAIStatus(config);
-        showToast('success', 'AI 配置已保存');
-    } else {
-        showToast('error', '保存失败: ' + result.error);
+// 关闭聊天抽屉
+function closeChatDrawer() {
+    const drawer = document.getElementById('chat-drawer');
+    const overlay = document.getElementById('chat-drawer-overlay');
+    if (drawer && overlay) {
+        overlay.classList.remove('opacity-100');
+        drawer.classList.add('translate-x-full');
+        setTimeout(() => overlay.classList.add('hidden'), 300);
     }
 }
 
-// 测试 AI 连接
-async function testAIConnection() {
-    const statusEl = document.getElementById('ai-connection-status');
-    const btn = document.getElementById('btn-test-ai-connection');
-
-    btn.disabled = true;
-    btn.textContent = '⏳ 测试中...';
-    statusEl.innerHTML = '<div class="flex items-center gap-2"><div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div><span class="text-yellow-400">正在连接...</span></div>';
-
-    // 先保存配置
-    await saveAIConfig();
-
-    const result = await window.electronAPI.testAIConnection();
-
-    if (result.success) {
-        statusEl.innerHTML = `< div class="flex items-center gap-2" ><span class="w-2 h-2 rounded-full bg-emerald-500"></span><span class="text-emerald-400">✓ 连接成功</span></div > <div class="text-slate-500 mt-1 truncate" title="${result.message}">${result.message?.substring(0, 50) || ''}</div>`;
-        showToast('success', 'AI 连接成功！');
-    } else {
-        statusEl.innerHTML = `< div class="flex items-center gap-2" ><span class="w-2 h-2 rounded-full bg-red-500"></span><span class="text-red-400">✗ 连接失败</span></div > <div class="text-red-400/70 mt-1 text-[10px]">${result.message || '未知错误'}</div>`;
-        showToast('error', '连接失败: ' + result.message);
-    }
-
-    btn.disabled = false;
-    btn.textContent = '🔗 测试连接';
-}
-
-// 发送 AI 聊天消息
 // 发送 AI 聊天消息
 window.sendAIChatMessage = async function () {
     const input = document.getElementById('chat-input');
     const message = input?.value?.trim();
 
     if (!message) return;
-    if (aiState.isLoading) return;
+    if (aiChatState.isLoading) return;
 
-    if (!aiState.config.apiKey) {
-        showToast('warning', '请先配置 AI 模型');
+    if (!state.aiConfig) {
+        showToast('warning', '请先配置 AI 模型并确保已保存');
         return;
     }
 
-    aiState.isLoading = true;
+    const provider = state.aiProviders.find(p => p.key === state.aiConfig.provider);
+    const hasApiKey = state.aiConfig.apiKey || provider?.isLocal;
+    const hasModel = state.aiConfig.model || state.aiConfig.customModels;
+
+    if (!hasApiKey || !hasModel) {
+        showToast('warning', '请先配置 AI 模型并确保已保存');
+        return;
+    }
+
+    aiChatState.isLoading = true;
+    aiChatState.currentContent = '';
     input.value = '';
 
     // 添加用户消息
     addChatMessage('user', message);
 
-    // 添加加载状态
-    const loadingId = addChatMessage('ai', '<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div><span class="text-slate-400">思考中...</span></div>', true);
+    // 添加 AI 消息占位
+    aiChatState.currentMessageId = addChatMessage('ai', '<div class="flex items-center gap-2"><div class="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div><span class="text-slate-400">思考中...</span></div>');
 
     try {
-        const result = await window.electronAPI.sendAIMessage(message, aiState.chatHistory);
-
-        // 移除加载状态
-        removeChatMessage(loadingId);
+        const result = await window.electronAPI.sendAIMessage(message, aiChatState.chatHistory);
 
         if (result.success) {
             const response = result.data;
 
-            // 添加 AI 回复
-            addChatMessage('ai', formatAIResponse(response.content));
+            // 确保流式输出完整，如果流没更新完，最后强制更新一次
+            const messageEl = document.querySelector(`#${aiChatState.currentMessageId} .content-text`);
+            if (messageEl) {
+                messageEl.innerHTML = formatAIResponse(response.content);
+            }
 
             // 保存历史
-            aiState.chatHistory.push({ role: 'user', content: message });
-            aiState.chatHistory.push({ role: 'assistant', content: response.content });
+            aiChatState.chatHistory.push({ role: 'user', content: message });
+            aiChatState.chatHistory.push({ role: 'assistant', content: response.content });
 
             // 如果有操作指令，显示操作按钮
             if (response.action) {
                 handleAIAction(response.action);
             }
         } else {
-            addChatMessage('ai', `< span class="text-red-400" >❌ 请求失败: ${result.error}</span > `);
+            const messageEl = document.querySelector(`#${aiChatState.currentMessageId} .content-text`);
+            if (messageEl) {
+                messageEl.innerHTML = `<span class="text-red-400">❌ 请求失败: ${result.error}</span>`;
+            }
         }
     } catch (e) {
-        removeChatMessage(loadingId);
-        addChatMessage('ai', `< span class="text-red-400" >❌ 出错: ${e.message}</span > `);
+        const messageEl = document.querySelector(`#${aiChatState.currentMessageId} .content-text`);
+        if (messageEl) {
+            messageEl.innerHTML = `<span class="text-red-400">❌ 出错: ${e.message}</span>`;
+        }
     } finally {
-        aiState.isLoading = false;
+        aiChatState.isLoading = false;
+        aiChatState.currentMessageId = null;
     }
 };
 
 // 添加聊天消息
 function addChatMessage(role, content, isLoading = false) {
     const messagesEl = document.getElementById('chat-history');
+    if (!messagesEl) return;
     const msgId = 'msg-' + Date.now();
 
     const div = document.createElement('div');
@@ -1196,7 +1365,7 @@ function addChatMessage(role, content, isLoading = false) {
     } else {
         div.innerHTML = `
             <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm flex-shrink-0">🤖</div>
-            <div class="flex-1 bg-slate-800/80 rounded-lg rounded-tl-none p-3 text-sm text-slate-200 max-w-[80%] break-words">${content}</div>
+            <div class="flex-1 bg-slate-800/80 rounded-lg rounded-tl-none p-3 text-sm text-slate-200 max-w-[80%] break-words content-text">${content}</div>
         `;
     }
 
@@ -1218,6 +1387,36 @@ function formatAIResponse(content) {
 
     // 移除 JSON 代码块（AI 的操作指令）
     content = content.replace(/\{[\s\S]*?"action"[\s\S]*?\}/g, '');
+
+    // 优化 <think> 标签显示 (兼容流式未闭合的情况)
+    if (content.includes('&lt;think&gt;')) {
+        if (content.includes('&lt;/think&gt;')) {
+            content = content.replace(/&lt;think&gt;([\s\S]*?)&lt;\/think&gt;/g, (match, thinkContent) => {
+                return renderThinkBlock(thinkContent);
+            });
+        } else {
+            // 处理未闭合的 <think>，用于流式显示
+            content = content.replace(/&lt;think&gt;([\s\S]*)/g, (match, thinkContent) => {
+                return renderThinkBlock(thinkContent, true);
+            });
+        }
+    }
+
+    function renderThinkBlock(thinkContent, isStreaming = false) {
+        return `
+            <div class="bg-slate-900/50 border-l-2 border-purple-500/50 my-2 rounded overflow-hidden">
+                <details class="group" open>
+                    <summary class="flex items-center gap-2 px-3 py-1.5 text-xs text-slate-500 cursor-pointer hover:bg-slate-700/30 transition-colors list-none">
+                        <span class="transition-transform group-open:rotate-90">▶</span>
+                        <span>思考过程 ${isStreaming ? '<span class="animate-pulse">...</span>' : ''}</span>
+                    </summary>
+                    <div class="px-3 pb-3 text-xs text-slate-500 italic border-t border-slate-800/50 pt-2 leading-relaxed">
+                        ${thinkContent.trim().replace(/\n/g, '<br>')}
+                    </div>
+                </details>
+            </div>
+        `;
+    }
 
     // 转换 Markdown 格式
     // 粗体
@@ -1269,7 +1468,8 @@ async function handleAIAction(action) {
                 break;
 
             case 'scan_large':
-                const targetPath = action.path || 'C:';
+                const defaultScanPath = state.platform === 'darwin' ? '/' : 'C:';
+                const targetPath = action.path || defaultScanPath;
                 result = await window.electronAPI.scanLargeFiles({
                     targetPath: targetPath,
                     minSize: 100 * 1024 * 1024, // 100MB
@@ -1308,6 +1508,7 @@ async function handleAIAction(action) {
                     }
 
                     const selectedPath = folderResult.path;
+                    const defaultPath = state.platform === 'darwin' ? '/Users' : 'C:\\Users';
 
                     // 2. 扫描文件夹获取所有文件
                     addChatMessage('ai', `
@@ -1646,20 +1847,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 加载 AI 配置
 async function loadAIConfig() {
+    // 先获取供应商列表
+    const providersResult = await window.electronAPI.getAIProviders();
+    if (providersResult.success) {
+        state.aiProviders = providersResult.data;
+    }
+
     const r = await window.electronAPI.getAIConfig();
-    if (r.success) {
+    if (r.success && r.data) {
         state.aiConfig = r.data;
         updateAIStatus();
+    }
+
+    // 获取平台信息
+    const sysInfo = await window.electronAPI.getSystemInfo();
+    if (sysInfo.success) {
+        state.platform = sysInfo.data.platform;
     }
 }
 
 // 更新 AI 状态显示
 function updateAIStatus() {
     const statusText = document.getElementById('ai-status-text');
-    if (state.aiConfig && state.aiConfig.apiKey) {
-        const provider = state.aiConfig.provider || 'openai';
+    const provider = state.aiProviders.find(p => p.key === state.aiConfig?.provider);
+    const isConfigured = state.aiConfig && state.aiConfig.provider && (state.aiConfig.apiKey || provider?.isLocal) && state.aiConfig.model;
+
+    if (isConfigured) {
+        const providerName = provider?.name || state.aiConfig.provider;
         const model = state.aiConfig.model || '未选择';
-        statusText.textContent = `已配置: ${provider} - ${model} `;
+        statusText.textContent = `已配置: ${providerName} - ${model} `;
         statusText.classList.remove('text-slate-400');
         statusText.classList.add('text-green-400');
     } else {
@@ -1693,9 +1909,7 @@ async function openAIConfigModal() {
                 const apiKeyHint = document.getElementById('api-key-hint');
                 const apiKeyInput = document.getElementById('ai-api-key');
 
-                if (provider.key === 'ollama' || provider.key === 'lmstudio' ||
-                    provider.key === 'textgen' || provider.key === 'llamacpp' ||
-                    provider.key === 'vllm') {
+                if (provider.isLocal) {
                     apiKeyHint.textContent = '(本地服务无需密钥)';
                     apiKeyHint.classList.remove('text-red-400');
                     apiKeyHint.classList.add('text-green-400');
@@ -1736,7 +1950,8 @@ async function fetchAIModels() {
         return;
     }
 
-    if (!apiKey && provider !== 'ollama') {
+    const providerObj = state.aiProviders.find(p => p.key === provider);
+    if (!apiKey && !providerObj?.isLocal) {
         showToast('warning', '请先输入 API 密钥');
         return;
     }
@@ -1814,8 +2029,19 @@ async function saveAIConfig() {
         model: document.getElementById('ai-model-select').value
     };
 
-    if (!config.provider || !config.model) {
-        showToast('warning', '请完整填写配置信息');
+    const provider = state.aiProviders.find(p => p.key === config.provider);
+    if (!config.provider) {
+        showToast('warning', '请选择供应商');
+        return;
+    }
+
+    if (!config.apiKey && !provider?.isLocal) {
+        showToast('warning', '请输入 API 密钥');
+        return;
+    }
+
+    if (!config.model) {
+        showToast('warning', '请选择模型');
         return;
     }
 
@@ -2261,6 +2487,9 @@ function initAIAssistantListeners() {
     // 初始化第一个标签页
     switchAITab('categorize');
 
+    // 初始化聊天事件
+    initChatEvents();
+
     // 智能分类 - 文件选择
     document.getElementById('btn-select-folder-categorize')?.addEventListener('click', selectFolderForCategorize);
     document.getElementById('btn-select-files-categorize')?.addEventListener('click', selectFilesForCategorize);
@@ -2287,7 +2516,7 @@ function initAIAssistantListeners() {
     });
 }
 
-// 在页面加载时初始化
+// 页面加载时初始化
 document.addEventListener('DOMContentLoaded', () => {
     initElements();
     initEventListeners();
@@ -2386,3 +2615,63 @@ function showQRCode(type) {
         </div>
     `;
 }
+
+// --- 开发者清理逻辑 ---
+async function loadDevCleanerData() {
+    try {
+        const r = await window.electronAPI.getDevCleanerInfo();
+        if (r.success) {
+            renderDevCleanerInfo(r.data);
+        }
+    } catch (e) {
+        console.error('Failed to load dev cleaner data:', e);
+    }
+}
+
+function renderDevCleanerInfo(data) {
+    const container = document.getElementById('dev-cleaner-info');
+    if (!container) return;
+
+    if (data.length === 0) {
+        container.innerHTML = '<div class="text-xs text-slate-500">未检测到开发者缓存</div>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="mt-4 p-4 bg-slate-800/30 border border-slate-700/50 rounded-xl">
+            <h4 class="text-sm font-bold text-white mb-3">👨‍💻 开发者清理选项</h4>
+            <div class="space-y-3">
+                ${data.map(item => `
+                    <div class="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg border border-slate-800">
+                        <div class="flex items-center gap-3">
+                            <span class="text-xl">${item.icon}</span>
+                            <div>
+                                <div class="text-xs font-semibold text-white">${item.name}</div>
+                                <div class="text-[10px] text-slate-500">${item.description}</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs font-bold text-amber-500">${item.sizeFormatted}</div>
+                            <button class="mt-1 px-3 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 text-[10px] rounded border border-blue-500/30 transition-colors" 
+                                    onclick="cleanDevCategory('${item.key}')">立即清理</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+window.cleanDevCategory = async function (key) {
+    if (!await showConfirmDialog('确定要清理选中的开发者缓存吗？')) return;
+    showToast('info', '正在清理开发者缓存...');
+    try {
+        const r = await window.electronAPI.cleanJunkFiles([key]);
+        if (r.success) {
+            showToast('success', `已清理 ${r.data.freedSizeFormatted}`);
+            loadDevCleanerData();
+        }
+    } catch (e) {
+        showToast('error', '清理失败');
+    }
+};

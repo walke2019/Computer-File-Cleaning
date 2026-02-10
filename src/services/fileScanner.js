@@ -171,9 +171,20 @@ class FileScannerService {
                     const fullPath = path.join(dirPath, item.name);
 
                     // 检查是否在排除列表中
-                    const shouldExclude = allExcludes.some(exclude =>
-                        fullPath.toLowerCase().includes(exclude.toLowerCase())
-                    );
+                    const shouldExclude = allExcludes.some(exclude => {
+                        const normalizedExclude = exclude.replace(/\\/g, '/').toLowerCase();
+                        const normalizedFullPath = fullPath.replace(/\\/g, '/').toLowerCase();
+                        const normalizedStartPath = startPath.replace(/\\/g, '/').toLowerCase();
+
+                        // 如果当前路径等于排除路径，或者是在排除路径之下
+                        if (normalizedFullPath === normalizedExclude || normalizedFullPath.startsWith(normalizedExclude + '/')) {
+                            // 只有当我们的扫描起点不在排除路径之下时，才执行排除
+                            if (!normalizedStartPath.startsWith(normalizedExclude)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
 
                     if (shouldExclude) continue;
 
@@ -281,6 +292,85 @@ class FileScannerService {
             typeStats: typeStats,
             directoryStats: directoryStats
         };
+    }
+
+    /**
+     * 获取目录树映射 (用于 TreeMap 视觉化)
+     */
+    async getFolderTreeMap(targetPath, maxDepth = 3) {
+        this.abortScan = false;
+
+        const buildNode = async (currentPath, depth = 0) => {
+            if (this.abortScan || depth > maxDepth) return null;
+
+            const name = path.basename(currentPath) || currentPath;
+            const node = {
+                name: name,
+                path: currentPath,
+                children: [],
+                size: 0,
+                type: 'directory'
+            };
+
+            try {
+                const items = fs.readdirSync(currentPath, { withFileTypes: true });
+
+                for (const item of items) {
+                    if (this.abortScan) break;
+                    const fullPath = path.join(currentPath, item.name);
+
+                    if (item.isDirectory()) {
+                        // 排除系统目录
+                        const systemExcludes = this.platform.getSystemExcludePaths();
+                        const shouldExclude = systemExcludes.some(exclude => {
+                            const normalizedExclude = exclude.replace(/\\/g, '/').toLowerCase();
+                            const normalizedFullPath = fullPath.replace(/\\/g, '/').toLowerCase();
+                            const normalizedTargetPath = targetPath.replace(/\\/g, '/').toLowerCase();
+
+                            if (normalizedFullPath === normalizedExclude || normalizedFullPath.startsWith(normalizedExclude + '/')) {
+                                if (!normalizedTargetPath.startsWith(normalizedExclude)) {
+                                    return true;
+                                }
+                            }
+                            return false;
+                        });
+                        if (shouldExclude) continue;
+
+                        const childNode = await buildNode(fullPath, depth + 1);
+                        if (childNode) {
+                            node.children.push(childNode);
+                            node.size += childNode.size;
+                        }
+                    } else if (item.isFile()) {
+                        try {
+                            const stats = fs.statSync(fullPath);
+                            node.size += stats.size;
+                            // 只有在较浅层级才添加文件节点，否则会导致数据量过大
+                            if (depth < maxDepth) {
+                                node.children.push({
+                                    name: item.name,
+                                    path: fullPath,
+                                    size: stats.size,
+                                    type: 'file',
+                                    extension: path.extname(item.name).toLowerCase()
+                                });
+                            }
+                        } catch (e) { }
+                    }
+                }
+            } catch (error) {
+                // 无法读取目录
+            }
+
+            // 格式化大小并排序
+            node.value = node.size; // 用于 TreeMap 算法的权重
+            node.sizeFormatted = this.formatSize(node.size);
+            node.children.sort((a, b) => b.size - a.size);
+
+            return node;
+        };
+
+        return await buildNode(targetPath);
     }
 
     /**
@@ -463,7 +553,7 @@ class FileScannerService {
                 const used = total - free;
 
                 const driveInfo = {
-                    letter: this.platform.isWindows ? drivePath.replace(':', '') : '/',
+                    letter: this.platform.isWindows ? drivePath.replace(':', '') : (drivePath === '/' ? '/' : path.basename(drivePath)),
                     path: drivePath,
                     total: total,
                     free: free,
@@ -475,8 +565,12 @@ class FileScannerService {
                 };
 
                 // macOS 特殊处理：获取卷名称
-                if (this.platform.isMac && drivePath === '/') {
-                    driveInfo.name = 'Macintosh HD';
+                if (this.platform.isMac) {
+                    if (drivePath === '/') {
+                        driveInfo.name = 'Macintosh HD';
+                    } else if (drivePath.startsWith('/Volumes/')) {
+                        driveInfo.name = path.basename(drivePath);
+                    }
                 }
 
                 drives.push(driveInfo);

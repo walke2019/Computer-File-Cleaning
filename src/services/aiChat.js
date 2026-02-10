@@ -122,77 +122,51 @@ class AIChatService {
         };
 
         // 系统提示词
-        this.systemPrompt = `你是 Windows 清理大师的智能文件助手，专门帮助用户清理、整理和管理电脑文件。
+        this.systemPrompt = '';
+        this.platform = process.platform; // 默认平台
+        this.setPlatform(this.platform); // 初始化提示词
+    }
 
-**核心能力：**
-1. 智能理解用户的自然语言需求
-2. 自动推断文件路径和操作意图
-3. 提供专业的清理和整理建议
-4. 直接执行扫描和分析任务
+    /**
+     * 设置平台信息并更新提示词
+     */
+    setPlatform(platform) {
+        this.platform = platform;
+        const isMac = platform === 'darwin';
+        const osName = isMac ? 'macOS' : 'Windows';
+        const appName = isMac ? '智能文件整理助手' : 'Windows 清理大师';
+        const homeDir = isMac ? '/Users/{username}' : 'C:\\Users\\{username}';
+        const driveExample = isMac ? '/' : 'C:';
+        const trashName = isMac ? '废纸篓' : '回收站';
 
-**路径推断规则：**
-- "D盘的小说" → D:\\小说
-- "桌面上的图片" → C:\\Users\\{用户名}\\Desktop（或推断为桌面路径）
-- "下载文件夹" → C:\\Users\\{用户名}\\Downloads
-- "C盘" → C:
-- 如果用户提到具体目录名（如"小说"、"电影"、"文档"），优先推断为对应盘符下的该目录
+        this.systemPrompt = `你是一个高效的 AI 文件助手，当前运行在 **${osName}** 系统上。
 
-**操作类型识别：**
-请根据用户的关键词选择正确的操作：
+**任务：**
+根据用户的自然语言需求，快速识别意图并生成对应的 JSON 操作指令。
 
-1. **整理/分类文件** - 用户想要整理、归类、分类文件
-   关键词：整理、归类、分类、排序、管理
-   操作：{"action": "organize_files", "path": "D:\\小说"}
-   
-2. **扫描大文件** - 用户想找出占用空间大的文件
-   关键词：大文件、占用空间、找出大的、哪些文件大
-   操作：{"action": "scan_large", "path": "D:\\"}
+**环境信息 (${osName}):**
+- 根目录: \`${isMac ? '/' : 'C:\\'}\`
+- 用户主目录: \`${homeDir}\`
+- 关键目录: 桌面(Desktop), 下载(Downloads)
+- 垃圾清理: 包含系统缓存、临时文件及**${trashName}**
 
-3. **扫描垃圾文件** - 用户想清理系统垃圾
-   关键词：垃圾、清理、缓存、临时文件
-   操作：{"action": "scan_junk"}
+**操作类型及指令格式：**
+1. **整理文件** (归类/移动): \`{"action": "organize_files", "path": "目标路径"}\`
+2. **扫描大文件**: \`{"action": "scan_large", "path": "扫描路径"}\`
+3. **扫描垃圾文件** (清理/瘦身): \`{"action": "scan_junk"}\`
+4. **扫描重复文件**: \`{"action": "scan_duplicates", "path": "扫描路径"}\`
 
-4. **扫描重复文件** - 用户想找出重复的文件
-   关键词：重复、副本、相同的文件
-   操作：{"action": "scan_duplicates", "path": "D:\\"}
+**原则：**
+- **拒绝废话**：回复要极简，直接告诉用户你要做什么。
+- **路径推断**：如果用户未指定完整路径，根据 ${osName} 习惯推断（如 "${isMac ? '下载' : 'D盘'}" -> "${isMac ? '/Users/{username}/Downloads' : 'D:\\'}"）。
+- **指令优先**：在回复文本末尾且必须附加 JSON 指令。
 
-**操作指令格式：**
-当理解用户意图后，返回 JSON 格式的操作指令（在回复文本后附加）：
+**示例对话 (${osName}):**
+用户: "帮我清理下"
+回复: "好的，立即开始扫描系统垃圾及${trashName} 🧹\n{\"action\": \"scan_junk\"}"
 
-1. 整理文件（AI 智能分类）：
-   {"action": "organize_files", "path": "D:\\小说"}
-
-2. 扫描大文件（查找占用空间大的文件）：
-   {"action": "scan_large", "path": "D:\\小说"}
-   
-3. 扫描垃圾文件：
-   {"action": "scan_junk"}
-
-4. 扫描重复文件：
-   {"action": "scan_duplicates", "path": "D:\\"}
-
-**交互原则：**
-- 优先执行操作，而不是只提问
-- 准确识别用户意图，选择正确的操作类型
-- 如果用户说"整理XX"，使用 organize_files 而不是 scan_large
-- 如果用户说"找大文件"，使用 scan_large
-- 回复简洁友好，使用 emoji 增强可读性
-- 执行操作后，等待系统返回结果再给出建议
-
-**示例对话：**
-用户："帮我整理下D盘的小说目录"
-你的回复："好的！我来帮你智能分类 D:\\小说 目录下的文件，按类型和内容自动归类 📚✨"
-附加指令：{"action": "organize_files", "path": "D:\\小说"}
-
-用户："D盘有哪些大文件"
-你的回复："马上扫描 D 盘的大文件，看看哪些占用空间最多 🔍"
-附加指令：{"action": "scan_large", "path": "D:"}
-
-用户："清理一下垃圾"
-你的回复："马上为你扫描系统垃圾文件！🧹"
-附加指令：{"action": "scan_junk"}
-
-记住：你的目标是让用户感觉你真的在"做事"，而不只是"说话"。准确理解用户意图是关键！`;
+用户: "${isMac ? '看看下载文件夹里的大文件' : '看看D盘的大文件'}"
+回复: "已定位${isMac ? '下载' : 'D盘'}目录，正在扫描大文件... �\n{\"action\": \"scan_large\", \"path\": \"${isMac ? '/Users/{username}/Downloads' : 'D:\\'}\"}"`;
     }
 
     /**
@@ -218,7 +192,8 @@ class AIChatService {
             name: value.name,
             models: value.models,
             defaultModel: value.defaultModel,
-            baseUrl: value.baseUrl
+            baseUrl: value.baseUrl,
+            isLocal: value.isLocal || false
         }));
     }
 
@@ -387,53 +362,51 @@ class AIChatService {
      * 自动识别已包含版本路径的 URL，只在需要时添加 /v1
      */
     normalizeBaseUrl(url) {
-        // 移除末尾的斜杠
-        url = url.replace(/\/+$/, '');
+        if (!url) return '';
 
-        // 检查 URL 是否已包含 API 版本路径
-        // 支持的模式: /v1, /v2, /v3, /v4, /api, /compatible-mode, /paas 等
+        // 1. 去除首尾空格和末尾多余斜杠
+        url = url.trim().replace(/\/+$/, '');
+
+        // 2. 检查是否已经包含了版本号或特定的 API 路径 (不局限于末尾)
+        // 支持模式: /v1, /v1/, /api/v1, /compatible-mode/v1, /completions 等
         const versionPatterns = [
-            /\/v\d+$/,                    // /v1, /v2, /v3 等
-            /\/api\/v\d+$/,               // /api/v1 等
-            /\/compatible-mode\/v\d+$/,   // 通义千问兼容模式
-            /\/paas\/v\d+$/,              // 智谱 AI 模式
-            /\/client\/v\d+\/accounts\/.+\/ai\/v\d+$/,  // Cloudflare 模式
-            /\/chat\/completions$/,       // 直接指向 completions
-            /\/completions$/              // 直接指向 completions
+            /\/v\d+($|\/)/,                  // /v1 或 /v1/
+            /\/api\/v\d+($|\/)/,             // /api/v1
+            /\/compatible-mode\/v\d+($|\/)/, // 通义千问
+            /\/paas\/v\d+($|\/)/,            // 智谱
+            /\/client\/v\d+/                 // Cloudflare
         ];
 
-        // 检查是否匹配任意已知版本模式
-        const hasVersionPath = versionPatterns.some(pattern => pattern.test(url));
+        const hasVersion = versionPatterns.some(pattern => pattern.test(url));
 
-        if (hasVersionPath) {
-            // 如果以 /completions 结尾，移除它（因为后面会添加）
-            if (url.endsWith('/chat/completions')) {
-                url = url.replace(/\/chat\/completions$/, '');
-            } else if (url.endsWith('/completions')) {
-                url = url.replace(/\/completions$/, '');
-            }
+        // 3. 如果已经包含 /chat/completions 或 /completions，先清理掉，因为后面会统一加
+        if (url.endsWith('/chat/completions')) {
+            url = url.replace(/\/chat\/completions$/, '');
+        } else if (url.endsWith('/completions')) {
+            url = url.replace(/\/completions$/, '');
+        }
+
+        // 4. 特殊：如果清理后已经带有版本号，直接返回
+        if (versionPatterns.some(pattern => pattern.test(url))) {
             return url;
         }
 
-        // 检查是否是已知品牌的 API 地址（通常不需要 /v1）
+        // 5. 检查是否是已知不需要 /v1 的地址 (如 Anthropic)
         const noV1Needed = [
-            'anthropic.com',  // Anthropic 使用自己的路径模式
+            'anthropic.com',
+            'api.anthropic'
         ];
-
-        const needsNoV1 = noV1Needed.some(domain => url.includes(domain));
-
-        if (needsNoV1) {
+        if (noV1Needed.some(domain => url.includes(domain))) {
             return url;
         }
 
-        // 默认添加 /v1（适用于大多数 OpenAI 兼容接口）
-        // 但如果用户已经输入了完整路径就不要添加
-        if (!url.match(/\/v\d+$/) && !url.endsWith('/api')) {
-            // 只有当明确是 OpenAI 服务且没有版本号时才添加 /v1
-            if (url.includes('api.openai.com')) {
-                url += '/v1';
-            }
-            // 默认不自动添加 /v1，完全信任用户输入
+        // 6. 核心优化：如果 URL 中没有明显的版本标识，自动补全 /v1
+        // 我们改用正则更精确地检查是否已经存在 /v1 或 /api/ 这种关键路径
+        const alreadyHasApiOrVersion = /\/(v\d+|api)\//i.test(url + '/');
+
+        if (!alreadyHasApiOrVersion) {
+            // 对于大多数中转站和本地服务，如果用户只提供了根地址，我们需要补全 /v1
+            url += '/v1';
         }
 
         return url;
@@ -456,6 +429,82 @@ class AIChatService {
     }
 
     /**
+     * 发送消息 - 流式响应
+     */
+    async sendMessageStream(userMessage, history = [], onChunk) {
+        const { provider, apiKey, baseUrl, model } = this.config;
+
+        if (!apiKey && !this.providers[provider]?.isLocal) {
+            throw new Error('请先配置 API 密钥');
+        }
+
+        let finalBaseUrl = this.normalizeBaseUrl(baseUrl || this.providers[provider]?.baseUrl);
+        let finalModel = model || this.providers[provider]?.defaultModel;
+
+        const messages = [
+            { role: 'system', content: this.systemPrompt },
+            ...history.slice(-10),
+            { role: 'user', content: userMessage }
+        ];
+
+        const requestBody = {
+            model: finalModel,
+            messages: messages,
+            temperature: 0.7,
+            max_tokens: 2000,
+            stream: true
+        };
+
+        let fullContent = '';
+        let lineBuffer = '';
+
+        try {
+            await this.httpRequest(finalBaseUrl + '/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': apiKey ? `Bearer ${apiKey}` : ''
+                },
+                body: JSON.stringify(requestBody),
+                isStream: true,
+                onChunk: (chunk) => {
+                    lineBuffer += chunk;
+                    let lines = lineBuffer.split('\n');
+                    lineBuffer = lines.pop(); // 保持最后的（可能不完整的）行
+
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine || trimmedLine === 'data: [DONE]') continue;
+
+                        if (trimmedLine.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(trimmedLine.slice(6));
+                                // 兼容不同供应商的字段名 (delta.content 或 text)
+                                const text = data.choices?.[0]?.delta?.content || data.choices?.[0]?.text || '';
+                                if (text) {
+                                    fullContent += text;
+                                    if (onChunk) onChunk(text);
+                                }
+                            } catch (e) {
+                                // 只有当行内容看起来像完整的 JSON 但解析失败时才报错
+                                if (trimmedLine.endsWith('}')) {
+                                    console.error('[AI Stream] Parse error:', e.message, trimmedLine);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('[AI Stream] Request error:', error);
+            throw error;
+        }
+
+        const action = this.parseAction(fullContent);
+        return { content: fullContent, action };
+    }
+
+    /**
      * HTTP 请求
      */
     httpRequest(url, options) {
@@ -469,15 +518,32 @@ class AIChatService {
                 headers: options.headers || {},
                 timeout: 60000
             }, (res) => {
+                if (res.statusCode >= 400) {
+                    let errorData = '';
+                    res.on('data', chunk => errorData += chunk);
+                    res.on('end', () => {
+                        reject(new Error(`请求失败 (${res.statusCode}): ${errorData.substring(0, 200)}`));
+                    });
+                    return;
+                }
+
                 let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => {
-                    try {
-                        resolve(JSON.parse(data));
-                    } catch (e) {
-                        reject(new Error(`响应解析失败: ${data.substring(0, 200)}`));
-                    }
-                });
+                if (options.isStream) {
+                    res.on('data', chunk => {
+                        const chunkStr = chunk.toString();
+                        if (options.onChunk) options.onChunk(chunkStr);
+                    });
+                    res.on('end', () => resolve({}));
+                } else {
+                    res.on('data', chunk => data += chunk);
+                    res.on('end', () => {
+                        try {
+                            resolve(JSON.parse(data));
+                        } catch (e) {
+                            reject(new Error(`响应解析失败: ${data.substring(0, 200)}`));
+                        }
+                    });
+                }
             });
 
             req.on('error', reject);

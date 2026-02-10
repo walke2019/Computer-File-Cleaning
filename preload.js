@@ -78,6 +78,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     aiCreateCategoryStructure: (basePath, categories) => ipcRenderer.invoke('ai-create-category-structure', basePath, categories),
     aiMoveToCategories: (basePath, categorizedFiles) => ipcRenderer.invoke('ai-move-to-categories', basePath, categorizedFiles),
 
+    aiMoveToCategories: (basePath, categorizedFiles) => ipcRenderer.invoke('ai-move-to-categories', basePath, categorizedFiles),
+
+    // ==================== 卸载服务 ====================
+    getInstalledApps: () => ipcRenderer.invoke('get-installed-apps'),
+    findAppRelatedFiles: (appPath, bundleId) => ipcRenderer.invoke('find-app-related-files', appPath, bundleId),
+    uninstallApp: (appPath, relatedFiles) => ipcRenderer.invoke('uninstall-app', appPath, relatedFiles),
+
+    // ==================== 视觉化 ====================
+    getFolderTreeMap: (targetPath, maxDepth) => ipcRenderer.invoke('get-folder-treemap', targetPath, maxDepth),
+
+    // ==================== 开发者清理 ====================
+    getDevCleanerInfo: () => ipcRenderer.invoke('get-dev-cleaner-info'),
+
     // ==================== 事件监听 ====================
     onScanProgress: (callback) => ipcRenderer.on('scan-progress', (event, progress) => callback(progress)),
     onCleanProgress: (callback) => ipcRenderer.on('clean-progress', (event, progress) => callback(progress)),
@@ -87,6 +100,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onDeleteEmptyProgress: (callback) => ipcRenderer.on('delete-empty-progress', (event, progress) => callback(progress)),
     onScanDuplicateProgress: (callback) => ipcRenderer.on('scan-duplicate-progress', (event, progress) => callback(progress)),
     onDeleteDuplicateProgress: (callback) => ipcRenderer.on('delete-duplicate-progress', (event, progress) => callback(progress)),
+    onAIChatChunk: (callback) => ipcRenderer.on('ai-chat-chunk', (event, data) => callback(data)),
     onAIAnalyzeProgress: (callback) => ipcRenderer.on('ai-analyze-progress', (event, progress) => callback(progress)),
     onAIRenameProgress: (callback) => ipcRenderer.on('ai-rename-progress', (event, progress) => callback(progress)),
     onAIBatchRenameProgress: (callback) => ipcRenderer.on('ai-batch-rename-progress', (event, progress) => callback(progress)),
